@@ -43,14 +43,60 @@ export function getSession(): Session | null {
 
 export function setSession(session: Session) {
   if (typeof window === 'undefined') return;
+
+  const guestCartKey = `cafeCart:${localStorage.getItem(GUEST_ID_KEY) ?? 'guest'}`;
+  const rawGuest = localStorage.getItem(guestCartKey);
+
   localStorage.setItem(SESSION_KEY, JSON.stringify(session));
   localStorage.setItem('cafeRole', session.user.role);
+
+  // Merge guest cart items into user cart when logging in
+  if (rawGuest) {
+    try {
+      const guestItems = JSON.parse(rawGuest);
+      if (Array.isArray(guestItems) && guestItems.length > 0) {
+        const userCartKey = getCartStorageKey();
+        const rawUser = localStorage.getItem(userCartKey);
+        const userItems: Array<{ productId: number; quantity: number }> = rawUser ? JSON.parse(rawUser) : [];
+
+        for (const item of guestItems) {
+          const existing = userItems.find((u) => u.productId === item.productId);
+          if (existing) {
+            existing.quantity += item.quantity;
+          } else {
+            userItems.push(item);
+          }
+        }
+        localStorage.setItem(userCartKey, JSON.stringify(userItems));
+        localStorage.removeItem(guestCartKey);
+      }
+    } catch {
+      // Ignore parse error
+    }
+  }
+}
+
+export function getCartCount(): number {
+  if (typeof window === 'undefined') return 0;
+  try {
+    const raw = localStorage.getItem(getCartStorageKey());
+    const items = raw ? JSON.parse(raw) : [];
+    return Array.isArray(items) ? items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export function notifyCartUpdated() {
+  if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return;
+  window.dispatchEvent(new CustomEvent('cart-updated'));
 }
 
 export function clearSession() {
   if (typeof window === 'undefined') return;
   localStorage.removeItem(SESSION_KEY);
   localStorage.removeItem('cafeRole');
+  notifyCartUpdated();
 }
 
 export function getRole(): UserRole {

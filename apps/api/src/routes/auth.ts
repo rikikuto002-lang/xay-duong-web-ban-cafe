@@ -1,38 +1,45 @@
 import { Router } from 'express';
+import { authMiddleware, requireRole, createToken, getSession, setSession, hashPassword, verifyPassword, type AuthUser, type UserRole } from '../middleware/auth.js';
 
 const router = Router();
 
-const users = [
-  {
+type StoredUser = AuthUser & { passwordHash: string };
+
+// In-memory user store (replace with database in production)
+const users = new Map<string, StoredUser>();
+
+// Initialize with demo users (passwords are hashed)
+const initUsers = () => {
+  const guestHash = hashPassword('guest123');
+  const customerHash = hashPassword('customer123');
+  const adminHash = hashPassword('admin123');
+
+  users.set('guest@example.com', {
     id: 'guest-1',
     name: 'Khách vãng lai',
     email: 'guest@example.com',
-    password: 'guest123',
+    passwordHash: guestHash,
     role: 'guest'
-  },
-  {
+  });
+  users.set('customer@example.com', {
     id: 'customer-1',
     name: 'Nguyễn Văn A',
     email: 'customer@example.com',
-    password: 'customer123',
+    passwordHash: customerHash,
     role: 'customer'
-  },
-  {
+  });
+  users.set('admin@cafeshop.vn', {
     id: 'admin-1',
     name: 'Admin Cửa hàng',
     email: 'admin@cafeshop.vn',
-    password: 'admin123',
+    passwordHash: adminHash,
     role: 'admin'
-  }
-];
-
-const sessions = new Map<string, (typeof users)[number]>();
-
-const createToken = (user: (typeof users)[number]) => {
-  return Buffer.from(`${user.email}:${user.role}:${Date.now()}`).toString('base64');
+  });
 };
 
-router.post('/register', (req, res) => {
+initUsers();
+
+router.post('/register', async (req, res) => {
   const { name, email, password, role } = req.body ?? {};
 
   if (!name || !email || !password) {
@@ -40,24 +47,26 @@ router.post('/register', (req, res) => {
   }
 
   const normalizedEmail = String(email).trim().toLowerCase();
-  const existingUser = users.find((item) => item.email.toLowerCase() === normalizedEmail);
+  const existingUser = users.get(normalizedEmail);
 
   if (existingUser) {
     return res.status(409).json({ message: 'Tài khoản với email này đã tồn tại.' });
   }
 
-  const nextRole = role === 'admin' ? 'customer' : role === 'guest' ? 'customer' : 'customer';
-  const newUser = {
+  const nextRole: UserRole = 'customer';
+  const passwordHash = hashPassword(String(password));
+
+  const newUser: StoredUser = {
     id: `customer-${Date.now()}`,
     name: String(name).trim(),
     email: normalizedEmail,
-    password: String(password),
+    passwordHash,
     role: nextRole
   };
 
-  users.push(newUser);
+  users.set(normalizedEmail, newUser);
   const token = createToken(newUser);
-  sessions.set(token, newUser);
+  setSession(token, newUser);
 
   return res.status(201).json({
     message: 'Tạo tài khoản thành công',
@@ -71,18 +80,17 @@ router.post('/register', (req, res) => {
   });
 });
 
-router.post('/login', (req, res) => {
+router.post('/login', async (req, res) => {
   const { email, password, role } = req.body ?? {};
 
   if (!email || !password) {
     return res.status(400).json({ message: 'Email và mật khẩu là bắt buộc.' });
   }
 
-  const user = users.find(
-    (item) => item.email.toLowerCase() === String(email).toLowerCase() && item.password === String(password)
-  );
+  const normalizedEmail = String(email).trim().toLowerCase();
+  const user = users.get(normalizedEmail);
 
-  if (!user) {
+  if (!user || !verifyPassword(String(password), user.passwordHash)) {
     return res.status(401).json({ message: 'Thông tin đăng nhập không chính xác.' });
   }
 
@@ -91,7 +99,7 @@ router.post('/login', (req, res) => {
   }
 
   const token = createToken(user);
-  sessions.set(token, user);
+  setSession(token, user);
 
   return res.json({
     message: 'Đăng nhập thành công',
@@ -105,24 +113,26 @@ router.post('/login', (req, res) => {
   });
 });
 
-router.get('/me', (req, res) => {
-  const authHeader = req.headers.authorization ?? '';
-  const token = authHeader.replace(/^Bearer\s+/i, '');
-
-  if (!token || !sessions.has(token)) {
-    return res.status(401).json({ message: 'Bạn chưa đăng nhập.' });
-  }
-
-  const user = sessions.get(token);
-
+router.get('/me', authMiddleware, (req, res) => {
   return res.json({
     user: {
-      id: user?.id,
-      name: user?.name,
-      email: user?.email,
-      role: user?.role
+      id: req.user?.id,
+      name: req.user?.name,
+      email: req.user?.email,
+      role: req.user?.role
     }
   });
+});
+
+// Admin only: list all users
+router.get('/users', authMiddleware, requireRole('admin'), (req, res) => {
+  const userList = Array.from(users.values()).map(u => ({
+    id: u.id,
+    name: u.name,
+    email: u.email,
+    role: u.role
+  }));
+  res.json({ users: userList });
 });
 
 export default router;

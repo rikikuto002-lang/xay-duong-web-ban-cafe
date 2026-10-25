@@ -1,0 +1,38 @@
+name: CI - Quality & Integrity Check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-test-build:
+    name: Check, Test & Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Typecheck Web & API
+        run: |
+          npm run check:web
+          npm run build --workspace apps/api
+
+      - name: Run Backend & Frontend Unit/Integration Tests
+        run: |
+          npm run test --workspace apps/api
+          npm run test --workspace apps/web
+
+      - name: Build Web Production Bundle
+        run: npm run build:web

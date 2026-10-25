@@ -2,22 +2,13 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "cafe-commerce",
   "compatibility_date": "2025-01-01",
-  "main": "src/index.ts",
-  "migrations": [
-    {
-      "tag": "v1",
-      "new_sql": "migrations/0001_init.sql"
-    },
-    {
-      "tag": "v2",
-      "new_sql": "migrations/0002_seed.sql"
-    }
-  ],
+  "main": "../../apps/api/src/index.ts",
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "cafe-db",
-      "database_id": "local-dev-db-id"
+      "database_id": "cafe-db-production-id",
+      "migrations_dir": "migrations"
     }
   ],
   "r2_buckets": [
@@ -25,5 +16,9 @@
       "binding": "PRODUCT_IMAGES",
       "bucket_name": "cafe-product-images"
     }
-  ]
+  ],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  }
 }

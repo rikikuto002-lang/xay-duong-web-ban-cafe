@@ -2,6 +2,12 @@
   import { onMount } from 'svelte';
   import { getSession } from '$lib/auth';
 
+  export let data: Record<string, unknown> = {};
+  export let params: Record<string, string> = {};
+
+  const routeState = { data, params };
+  void routeState;
+
   type UserSession = {
     id: string;
     name: string;

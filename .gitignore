@@ -2,6 +2,11 @@ node_modules
 .env
 .env.*
 .vite
-/dist
+**/dist
+**/.svelte-kit
 *.log
 .DS_Store
+backups
+test-results
+playwright-report
+blob-report

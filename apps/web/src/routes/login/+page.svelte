@@ -2,10 +2,18 @@
   import { onMount } from 'svelte';
   import { setSession, clearSession, getRole } from '$lib/auth';
 
+  export let data: Record<string, unknown> = {};
+  export let params: Record<string, string> = {};
+
+  const routeState = { data, params };
+  void routeState;
+
+  const API_URL = import.meta.env.PUBLIC_API_URL ?? 'http://localhost:4000';
+
   let role: 'guest' | 'customer' | 'admin' = 'guest';
   let name = '';
-  let email = 'customer@example.com';
-  let password = 'customer123';
+  let email = '';
+  let password = '';
   let isRegisterMode = false;
   let message = '';
   let isLoading = false;
@@ -24,7 +32,7 @@
     message = '';
 
     try {
-      const endpoint = isRegisterMode ? 'http://localhost:4000/api/auth/register' : 'http://localhost:4000/api/auth/login';
+      const endpoint = isRegisterMode ? `${API_URL}/api/auth/register` : `${API_URL}/api/auth/login`;
       const payload = isRegisterMode
         ? { name, email, password, role: 'customer' }
         : { email, password, role };
@@ -81,31 +89,23 @@
     {#if isRegisterMode}
       <label>
         Họ và tên
-        <input bind:value={name} type="text" placeholder="Nguyễn Văn A" />
+        <input bind:value={name} type="text" placeholder="Nguyễn Văn A" required />
       </label>
     {/if}
 
     <label>
       Email
-      <input bind:value={email} type="email" placeholder="demo@cafeshop.vn" />
+      <input bind:value={email} type="email" placeholder="demo@cafeshop.vn" required />
     </label>
 
     <label>
       Mật khẩu
-      <input bind:value={password} type="password" placeholder="********" />
+      <input bind:value={password} type="password" placeholder="********" required />
     </label>
 
     <button class="primary" on:click={handleSubmit} disabled={isLoading}>
       {isLoading ? (isRegisterMode ? 'Đang tạo tài khoản...' : 'Đang đăng nhập...') : (isRegisterMode ? 'Tạo tài khoản' : 'Đăng nhập')}
     </button>
-
-    <div class="demo-box">
-      <p>Demo tài khoản:</p>
-      <ul>
-        <li>Customer: customer@example.com / customer123</li>
-        <li>Admin: admin@cafeshop.vn / admin123</li>
-      </ul>
-    </div>
 
     {#if message}
       <p class="message">{message}</p>
@@ -188,20 +188,6 @@
     padding: 14px 16px;
     font-weight: 700;
     cursor: pointer;
-  }
-
-  .demo-box {
-    margin-top: 16px;
-    background: #fff5ee;
-    border: 1px solid #f3dfd2;
-    border-radius: 12px;
-    padding: 12px 14px;
-    color: #654a3b;
-  }
-
-  .demo-box ul {
-    margin: 8px 0 0;
-    padding-left: 18px;
   }
 
   .message {

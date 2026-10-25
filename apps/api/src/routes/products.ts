@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import { getDatabase } from '../lib/database.js';
-import { products as mockProducts } from '../data/mockData.js';
+import { authMiddleware, requireRole } from '../middleware/auth.js';
 
 const router = Router();
 
+// Public: list products
 router.get('/', async (req, res) => {
   const { category } = req.query;
   const db = await getDatabase();
@@ -15,6 +16,7 @@ router.get('/', async (req, res) => {
   });
 });
 
+// Public: get product by ID
 router.get('/:id', async (req, res) => {
   const db = await getDatabase();
   const product = await db.getProductById(Number(req.params.id));
@@ -26,7 +28,8 @@ router.get('/:id', async (req, res) => {
   return res.json({ product });
 });
 
-router.post('/', async (req, res) => {
+// Admin only: create product
+router.post('/', authMiddleware, requireRole('admin'), async (req, res) => {
   const payload = req.body;
   const db = await getDatabase();
 
@@ -40,15 +43,14 @@ router.post('/', async (req, res) => {
     description: payload.description ?? 'Sản phẩm mới'
   });
 
-  mockProducts.unshift(newProduct);
-
   res.status(201).json({
     message: 'Thêm sản phẩm thành công',
     product: newProduct
   });
 });
 
-router.put('/:id', async (req, res) => {
+// Admin only: update product
+router.put('/:id', authMiddleware, requireRole('admin'), async (req, res) => {
   const payload = req.body;
   const db = await getDatabase();
   const id = Number(req.params.id);
@@ -66,29 +68,20 @@ router.put('/:id', async (req, res) => {
     return res.status(404).json({ message: 'Không tìm thấy sản phẩm để cập nhật' });
   }
 
-  const index = mockProducts.findIndex((product) => product.id === id);
-  if (index >= 0) {
-    mockProducts[index] = updated;
-  }
-
   return res.json({
     message: 'Cập nhật sản phẩm thành công',
     product: updated
   });
 });
 
-router.delete('/:id', async (req, res) => {
+// Admin only: delete product
+router.delete('/:id', authMiddleware, requireRole('admin'), async (req, res) => {
   const db = await getDatabase();
   const id = Number(req.params.id);
 
   const deleted = await db.deleteProduct(id);
   if (!deleted) {
     return res.status(404).json({ message: 'Không tìm thấy sản phẩm để xoá' });
-  }
-
-  const index = mockProducts.findIndex((product) => product.id === id);
-  if (index >= 0) {
-    mockProducts.splice(index, 1);
   }
 
   return res.json({ message: 'Xoá sản phẩm thành công', id });
