@@ -10,12 +10,14 @@
 
   const API_URL = import.meta.env.PUBLIC_API_URL || 'https://ban-cafe-api.rikikuto002.workers.dev';
 
-  let role: 'guest' | 'customer' | 'admin' = 'guest';
+  let role: 'guest' | 'customer' | 'admin' = 'admin';
   let name = '';
-  let email = '';
-  let password = '';
+  let email = 'admin@cafeshop.vn';
+  let password = 'admin123';
+  let showPassword = false;
   let isRegisterMode = false;
   let message = '';
+  let isErrorMessage = false;
   let isLoading = false;
 
   onMount(() => {
@@ -52,6 +54,7 @@
   async function handleSubmit() {
     isLoading = true;
     message = '';
+    isErrorMessage = false;
 
     try {
       const endpoint = isRegisterMode ? `${API_URL}/api/auth/register` : `${API_URL}/api/auth/login`;
@@ -74,12 +77,17 @@
         try {
           result = JSON.parse(text);
         } catch {
-          throw new Error(text || `Lỗi máy chủ (${response.status})`);
+          result = { message: text || `Lỗi phản hồi từ máy chủ (${response.status})` };
         }
       }
 
       if (!response.ok) {
-        throw new Error(result.message ?? (isRegisterMode ? 'Tạo tài khoản thất bại' : 'Đăng nhập thất bại'));
+        const errorMsg =
+          result.message ||
+          result.error ||
+          result.msg ||
+          (isRegisterMode ? 'Tạo tài khoản thất bại' : 'Đăng nhập thất bại (Vui lòng kiểm tra lại mật khẩu)');
+        throw new Error(errorMsg);
       }
 
       setSession({
@@ -92,9 +100,11 @@
         }
       });
 
+      isErrorMessage = false;
       message = isRegisterMode ? 'Tạo tài khoản thành công' : 'Đăng nhập thành công';
       window.location.href = result.user.role === 'admin' ? '/admin' : '/';
     } catch (error) {
+      isErrorMessage = true;
       message = error instanceof Error ? error.message : (isRegisterMode ? 'Tạo tài khoản thất bại' : 'Đăng nhập thất bại');
       clearSession();
     } finally {
@@ -119,6 +129,16 @@
       <button class:selected={role === 'admin'} on:click={() => saveRole('admin')}>Admin</button>
     </div>
 
+    <div class="hint-box">
+      {#if role === 'admin'}
+        Tài khoản: <strong>admin@cafeshop.vn</strong> | Mật khẩu: <strong>admin123</strong>
+      {:else if role === 'customer'}
+        Tài khoản: <strong>customer@example.com</strong> | Mật khẩu: <strong>customer123</strong>
+      {:else}
+        Tài khoản: <strong>guest@example.com</strong> | Mật khẩu: <strong>guest123</strong>
+      {/if}
+    </div>
+
     {#if isRegisterMode}
       <label>
         Họ và tên
@@ -133,7 +153,16 @@
 
     <label>
       Mật khẩu
-      <input bind:value={password} type="password" placeholder="********" required />
+      <div class="password-wrap">
+        {#if showPassword}
+          <input bind:value={password} type="text" placeholder="admin123" required />
+        {:else}
+          <input bind:value={password} type="password" placeholder="admin123" required />
+        {/if}
+        <button type="button" class="toggle-pw" on:click={() => (showPassword = !showPassword)}>
+          {showPassword ? 'Ẩn' : 'Hiện'}
+        </button>
+      </div>
     </label>
 
     <button class="primary" on:click={handleSubmit} disabled={isLoading}>
@@ -141,7 +170,7 @@
     </button>
 
     {#if message}
-      <p class="message">{message}</p>
+      <p class="message" class:error-style={isErrorMessage}>{message}</p>
     {/if}
     <p class="note">Bạn đang ở vai trò: <strong>{role}</strong></p>
   </div>
@@ -175,10 +204,32 @@
     font-size: 32px;
   }
 
+  .mode-switch {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+
+  .mode-switch button {
+    flex: 1;
+    padding: 8px 12px;
+    border: 1px solid #e9d8c9;
+    border-radius: 8px;
+    background: #fdfaf7;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .mode-switch button.selected {
+    background: #3b281f;
+    color: white;
+    border-color: #3b281f;
+  }
+
   .role-list {
     display: grid;
     gap: 10px;
-    margin-bottom: 18px;
+    margin-bottom: 12px;
   }
 
   .role-list button {
@@ -196,11 +247,45 @@
     border-color: #3b281f;
   }
 
+  .hint-box {
+    margin-bottom: 16px;
+    padding: 10px 14px;
+    background: #fdf7ee;
+    border: 1px solid #fae6c8;
+    border-radius: 10px;
+    color: #8c5b1c;
+    font-size: 13px;
+  }
+
   label {
     display: block;
     margin-bottom: 16px;
     font-weight: 600;
     color: #47362f;
+  }
+
+  .password-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+
+  .password-wrap input {
+    margin-top: 8px;
+    padding-right: 54px;
+  }
+
+  .toggle-pw {
+    position: absolute;
+    right: 10px;
+    bottom: 8px;
+    background: none;
+    border: none;
+    color: #8c6b5b;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 4px 6px;
   }
 
   input {
@@ -210,6 +295,7 @@
     border: 1px solid #eadbce;
     border-radius: 10px;
     font: inherit;
+    box-sizing: border-box;
   }
 
   .primary {
@@ -230,6 +316,12 @@
     border: 1px solid #bfe7ce;
     padding: 10px 12px;
     border-radius: 10px;
+  }
+
+  .message.error-style {
+    color: #b02a37;
+    background: #fdf2f2;
+    border: 1px solid #f8d7da;
   }
 
   .note {
