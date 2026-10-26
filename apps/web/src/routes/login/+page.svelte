@@ -8,7 +8,7 @@
   const routeState = { data, params };
   void routeState;
 
-  const API_URL = import.meta.env.PUBLIC_API_URL ?? '';
+  const API_URL = import.meta.env.PUBLIC_API_URL || 'https://ban-cafe-api.rikikuto002.workers.dev';
 
   let role: 'guest' | 'customer' | 'admin' = 'guest';
   let name = '';
@@ -20,11 +20,33 @@
 
   onMount(() => {
     role = getRole();
+    if (role === 'admin') {
+      email = 'admin@cafeshop.vn';
+      password = 'admin123';
+    } else if (role === 'customer') {
+      email = 'customer@example.com';
+      password = 'customer123';
+    } else {
+      email = 'guest@example.com';
+      password = 'guest123';
+    }
   });
 
   function saveRole(nextRole: 'guest' | 'customer' | 'admin') {
     role = nextRole;
     localStorage.setItem('cafeRole', nextRole);
+    if (!isRegisterMode) {
+      if (nextRole === 'admin') {
+        email = 'admin@cafeshop.vn';
+        password = 'admin123';
+      } else if (nextRole === 'customer') {
+        email = 'customer@example.com';
+        password = 'customer123';
+      } else {
+        email = 'guest@example.com';
+        password = 'guest123';
+      }
+    }
   }
 
   async function handleSubmit() {
@@ -43,7 +65,18 @@
         body: JSON.stringify(payload)
       });
 
-      const result = await response.json();
+      let result: Record<string, any> = {};
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        result = await response.json();
+      } else {
+        const text = await response.text();
+        try {
+          result = JSON.parse(text);
+        } catch {
+          throw new Error(text || `Lỗi máy chủ (${response.status})`);
+        }
+      }
 
       if (!response.ok) {
         throw new Error(result.message ?? (isRegisterMode ? 'Tạo tài khoản thất bại' : 'Đăng nhập thất bại'));

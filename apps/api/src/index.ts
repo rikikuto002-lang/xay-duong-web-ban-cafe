@@ -73,7 +73,8 @@ if (!isWorkers && !isTestEnv) {
     fetch: app.fetch,
     port: env.port
   }, () => {
-    logger.info(`Cafe API (Hono) running at http://localhost:${env.port}`, { port: env.port });
+    logger.info(`Cafe API (Hono) running at PUBLIC_API_URL=https://ban-cafe-api.rikikuto002.workers.dev
+:${env.port}`, { port: env.port });
   });
 }
 

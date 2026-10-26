@@ -309,7 +309,7 @@ npm run build:web    # vite build → apps/web/build
         ['File', 'Purpose'],
         [
           ['apps/api/.env', 'PORT=4000, JWT_SECRET=..., PAYMENT_GATEWAY=bank-transfer'],
-          ['apps/web/.env', 'VITE_API_URL=http://localhost:4000 (nếu dùng)'],
+          ['apps/web/.env', 'PUBLIC_API_URL=https://ban-cafe-api.rikikuto002.workers.dev'],
           ['Cloudflare wrangler.toml', 'Binding D1, R2, KV cho production'],
         ]
       ),

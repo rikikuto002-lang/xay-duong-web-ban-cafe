@@ -1,17 +1,21 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 
+const API_BACKEND = process.env.PUBLIC_API_URL || 'https://ban-cafe-api.rikikuto002.workers.dev';
+
 export default defineConfig({
   plugins: [sveltekit()],
   server: {
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:4000',
-        changeOrigin: true
+        target: API_BACKEND,
+        changeOrigin: true,
+        secure: true
       },
       '/uploads': {
-        target: 'http://127.0.0.1:4000',
-        changeOrigin: true
+        target: API_BACKEND,
+        changeOrigin: true,
+        secure: true
       }
     }
   }
