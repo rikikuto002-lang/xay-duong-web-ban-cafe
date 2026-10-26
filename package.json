@@ -18,7 +18,10 @@
     "test:api": "npm run test --workspace apps/api",
     "test:web": "npm run test --workspace apps/web",
     "test": "npm run test:api && npm run test:web",
-    "backup": "npx tsx scripts/backup-db.mjs"
+    "backup": "npx tsx scripts/backup-db.mjs",
+    "deploy:api": "npx wrangler deploy --config infra/cloudflare/wrangler.jsonc",
+    "deploy:web": "npx wrangler pages deploy apps/web/.svelte-kit/output/client --project-name cafe-commerce",
+    "deploy:d1": "npx wrangler d1 migrations apply cafe-db --remote --config infra/cloudflare/wrangler.jsonc"
   },
   "devDependencies": {
     "concurrently": "^9.0.1"

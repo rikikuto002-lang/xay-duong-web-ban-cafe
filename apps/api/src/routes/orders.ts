@@ -1,10 +1,9 @@
-import { Router } from 'express';
+import { Hono } from 'hono';
 import { getDatabase, calculateShippingFee, type DbOrderStatus, type DbPaymentStatus } from '../lib/database.js';
 import { products as catalogProducts } from '../data/mockData.js';
-import { authMiddleware, requireRole } from '../middleware/auth.js';
-import type { AuthUser } from '../middleware/auth.js';
+import { authMiddleware, requireRole, type AuthUser, type AuthEnv } from '../middleware/auth.js';
 
-const router = Router();
+const router = new Hono<AuthEnv>();
 
 const normalizeEmail = (value?: string) => String(value ?? '').trim().toLowerCase();
 
@@ -41,7 +40,7 @@ export function validateCheckoutPayload(payload: Record<string, unknown>, produc
   const items = Array.isArray(payload.items) ? payload.items : [];
 
   if (!items.length) {
-    return { ok: false as const, status: 400, message: 'Giỏ hàng đang trống.' };
+    return { ok: false as const, status: 400 as const, message: 'Giỏ hàng đang trống.' };
   }
 
   const productMap = new Map(productCatalog.map((product) => [product.id, product]));
@@ -53,20 +52,20 @@ export function validateCheckoutPayload(payload: Record<string, unknown>, produc
     const quantity = Number((item as { quantity?: number })?.quantity ?? 0);
 
     if (!Number.isFinite(productId) || productId <= 0) {
-      return { ok: false as const, status: 400, message: 'Mã sản phẩm không hợp lệ.' };
+      return { ok: false as const, status: 400 as const, message: 'Mã sản phẩm không hợp lệ.' };
     }
 
     const product = productMap.get(productId);
     if (!product) {
-      return { ok: false as const, status: 404, message: `Sản phẩm ${productId} không tồn tại.` };
+      return { ok: false as const, status: 404 as const, message: `Sản phẩm ${productId} không tồn tại.` };
     }
 
     if (!Number.isInteger(quantity) || quantity <= 0) {
-      return { ok: false as const, status: 400, message: `Số lượng của ${product.name} không hợp lệ.` };
+      return { ok: false as const, status: 400 as const, message: `Số lượng của ${product.name} không hợp lệ.` };
     }
 
     if (quantity > product.stock) {
-      return { ok: false as const, status: 409, message: `Sản phẩm ${product.name} không đủ số lượng trong kho.` };
+      return { ok: false as const, status: 409 as const, message: `Sản phẩm ${product.name} không đủ số lượng trong kho.` };
     }
 
     const subtotalForItem = product.price * quantity;
@@ -94,12 +93,12 @@ export function validateCheckoutPayload(payload: Record<string, unknown>, produc
 }
 
 // 1. GET /api/orders - list orders (with authentication)
-router.get('/', authMiddleware, async (req, res) => {
-  const user = req.user as AuthUser;
+router.get('/', authMiddleware, async (c) => {
+  const user = c.get('user') as AuthUser;
   const db = await getDatabase();
   const orders = user.role === 'admin' ? await db.listOrders() : await db.listOrders(user.email);
 
-  return res.json({
+  return c.json({
     message: user.role === 'admin' ? 'Danh sách đơn hàng' : 'Danh sách đơn hàng của khách',
     orders: orders.map((order) => ({
       id: order.id,
@@ -120,25 +119,25 @@ router.get('/', authMiddleware, async (req, res) => {
 });
 
 // 2. GET /api/orders/:id - get order by ID (with authorization check & dynamic VietQR)
-router.get('/:id', authMiddleware, async (req, res) => {
-  const user = req.user as AuthUser;
+router.get('/:id', authMiddleware, async (c) => {
+  const user = c.get('user') as AuthUser;
   const db = await getDatabase();
-  const orderId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const orderId = String(c.req.param('id') ?? '');
   const order = await db.getOrderById(orderId);
 
   if (!order) {
-    return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
+    return c.json({ message: 'Không tìm thấy đơn hàng' }, 404);
   }
 
   if (user.role !== 'admin' && normalizeEmail(order.userEmail ?? user.email) !== normalizeEmail(user.email)) {
-    return res.status(403).json({ message: 'Bạn không có quyền xem đơn hàng này.' });
+    return c.json({ message: 'Bạn không có quyền xem đơn hàng này.' }, 403);
   }
 
   const qrUrl = order.paymentMethod === 'bank-transfer'
     ? generateVietQrUrl({ amount: order.total, orderId: order.id })
     : undefined;
 
-  return res.json({
+  return c.json({
     order: {
       ...order,
       customerEmail: order.userEmail ?? user.email,
@@ -151,14 +150,15 @@ router.get('/:id', authMiddleware, async (req, res) => {
 });
 
 // 3. POST /api/orders/checkout - create order (authenticated users)
-router.post('/checkout', authMiddleware, async (req, res) => {
-  const user = req.user as AuthUser;
-  const { customerName, phone, address, paymentMethod, couponCode, district } = req.body ?? {};
+router.post('/checkout', authMiddleware, async (c) => {
+  const user = c.get('user') as AuthUser;
+  const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+  const { customerName, phone, address, paymentMethod, couponCode, district } = body;
   const db = await getDatabase();
   const dbProducts = await db.listProducts();
-  const validation = validateCheckoutPayload(req.body ?? {}, dbProducts);
+  const validation = validateCheckoutPayload(body, dbProducts);
   if (!validation.ok) {
-    return res.status(validation.status).json({ message: validation.message });
+    return c.json({ message: validation.message }, validation.status);
   }
 
   const cleanName = String(customerName ?? user.name).trim() || user.name;
@@ -195,7 +195,7 @@ router.post('/checkout', authMiddleware, async (req, res) => {
   for (const item of validation.items) {
     const product = dbProducts.find((entry) => entry.id === item.productId);
     if (!product) {
-      return res.status(404).json({ message: `Sản phẩm ${item.productId} không tồn tại.` });
+      return c.json({ message: `Sản phẩm ${item.productId} không tồn tại.` }, 404);
     }
 
     const nextStock = product.stock - item.quantity;
@@ -228,7 +228,7 @@ router.post('/checkout', authMiddleware, async (req, res) => {
     ? generateVietQrUrl({ amount: order.total, orderId: order.id })
     : undefined;
 
-  return res.status(201).json({
+  return c.json({
     message: 'Tạo đơn hàng thành công. Vui lòng thanh toán theo hướng dẫn.',
     payment: method,
     order: {
@@ -241,12 +241,13 @@ router.post('/checkout', authMiddleware, async (req, res) => {
       content: `CAFE ${order.id}`,
       qrUrl
     }
-  });
+  }, 201);
 });
 
 // 4. POST /api/orders/webhook/payment - webhook for bank payment reconciliation (PayOS / SePay / Casso)
-router.post('/webhook/payment', async (req, res) => {
-  const { orderId: rawOrderId, amount, content, transactionId } = req.body ?? {};
+router.post('/webhook/payment', async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+  const { orderId: rawOrderId, amount, content, transactionId } = body;
   const db = await getDatabase();
 
   // Extract orderId from rawOrderId or content (e.g., "CAFE ORD-12345")
@@ -257,20 +258,20 @@ router.post('/webhook/payment', async (req, res) => {
   }
 
   if (!targetOrderId) {
-    return res.status(400).json({ success: false, message: 'Thiếu mã đơn hàng trong dữ liệu đối soát.' });
+    return c.json({ success: false, message: 'Thiếu mã đơn hàng trong dữ liệu đối soát.' }, 400);
   }
 
   const order = await db.getOrderById(targetOrderId);
   if (!order) {
-    return res.status(404).json({ success: false, message: `Không tìm thấy đơn hàng ${targetOrderId}` });
+    return c.json({ success: false, message: `Không tìm thấy đơn hàng ${targetOrderId}` }, 404);
   }
 
   const paidAmount = Number(amount ?? 0);
   if (paidAmount > 0 && paidAmount < order.total) {
-    return res.status(400).json({
+    return c.json({
       success: false,
       message: `Số tiền thanh toán (${paidAmount}đ) không đủ so với tổng đơn (${order.total}đ).`
-    });
+    }, 400);
   }
 
   // Update payment status to 'paid'
@@ -283,7 +284,7 @@ router.post('/webhook/payment', async (req, res) => {
   }
 
   const updatedOrder = await db.getOrderById(targetOrderId);
-  return res.json({
+  return c.json({
     success: true,
     message: `Đơn hàng ${targetOrderId} đã tự động chuyển sang trạng thái đã thanh toán (paid).`,
     order: updatedOrder
@@ -291,25 +292,25 @@ router.post('/webhook/payment', async (req, res) => {
 });
 
 // 5. POST /api/orders/:id/cancel - customer can cancel their pending order & restore stock
-router.post('/:id/cancel', authMiddleware, async (req, res) => {
-  const user = req.user as AuthUser;
+router.post('/:id/cancel', authMiddleware, async (c) => {
+  const user = c.get('user') as AuthUser;
   const db = await getDatabase();
-  const orderId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const orderId = String(c.req.param('id') ?? '');
   const order = await db.getOrderById(orderId);
 
   if (!order) {
-    return res.status(404).json({ message: 'Không tìm thấy đơn hàng.' });
+    return c.json({ message: 'Không tìm thấy đơn hàng.' }, 404);
   }
 
   // Authorization check
   if (user.role !== 'admin' && normalizeEmail(order.userEmail ?? user.email) !== normalizeEmail(user.email)) {
-    return res.status(403).json({ message: 'Bạn không có quyền thao tác trên đơn hàng này.' });
+    return c.json({ message: 'Bạn không có quyền thao tác trên đơn hàng này.' }, 403);
   }
 
   if (order.status !== 'pending') {
-    return res.status(400).json({
+    return c.json({
       message: `Không thể hủy đơn hàng đang ở trạng thái "${order.status}". Chỉ có thể hủy đơn khi còn chờ xác nhận (pending).`
-    });
+    }, 400);
   }
 
   // Restore product stock in DB
@@ -321,28 +322,29 @@ router.post('/:id/cancel', authMiddleware, async (req, res) => {
   }
 
   // Transition to cancelled
-  const reason = req.body?.reason ? String(req.body.reason).trim() : 'Khách hàng yêu cầu hủy đơn';
+  const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+  const reason = body?.reason ? String(body.reason).trim() : 'Khách hàng yêu cầu hủy đơn';
   const updatedOrder = await db.updateOrderStatus(orderId, 'cancelled', reason);
 
-  return res.json({
+  return c.json({
     message: 'Hủy đơn hàng thành công và đã hoàn kho.',
     order: updatedOrder
   });
 });
 
 // 6. POST /api/orders/:id/confirm-payment - quick confirmation for demo / manual payment reconciliation
-router.post('/:id/confirm-payment', authMiddleware, async (req, res) => {
-  const user = req.user as AuthUser;
+router.post('/:id/confirm-payment', authMiddleware, async (c) => {
+  const user = c.get('user') as AuthUser;
   const db = await getDatabase();
-  const orderId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const orderId = String(c.req.param('id') ?? '');
   const order = await db.getOrderById(orderId);
 
   if (!order) {
-    return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
+    return c.json({ message: 'Không tìm thấy đơn hàng' }, 404);
   }
 
   if (user.role !== 'admin' && normalizeEmail(order.userEmail ?? user.email) !== normalizeEmail(user.email)) {
-    return res.status(403).json({ message: 'Bạn không có quyền thao tác trên đơn hàng này.' });
+    return c.json({ message: 'Bạn không có quyền thao tác trên đơn hàng này.' }, 403);
   }
 
   await db.updatePaymentStatus(orderId, 'paid', `Xác nhận thanh toán thủ công bởi ${user.name}`);
@@ -351,30 +353,31 @@ router.post('/:id/confirm-payment', authMiddleware, async (req, res) => {
   }
 
   const updated = await db.getOrderById(orderId);
-  return res.json({
+  return c.json({
     message: 'Xác nhận thanh toán thành công. Đơn hàng đã chuyển sang trạng thái đã thanh toán (paid).',
     order: updated
   });
 });
 
 // 7. PATCH /api/orders/:id/status - admin only with state transition enforcement
-router.patch('/:id/status', authMiddleware, requireRole('admin'), async (req, res) => {
-  const { status, note } = req.body ?? {};
+router.patch('/:id/status', authMiddleware, requireRole('admin'), async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+  const { status, note } = body;
   const db = await getDatabase();
-  const orderId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const orderId = String(c.req.param('id') ?? '');
   const order = await db.getOrderById(orderId);
 
   if (!order) {
-    return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
+    return c.json({ message: 'Không tìm thấy đơn hàng' }, 404);
   }
 
   const nextStatus = status as DbOrderStatus;
   const allowed = ALLOWED_STATUS_TRANSITIONS[order.status] ?? [];
 
   if (!allowed.includes(nextStatus)) {
-    return res.status(400).json({
+    return c.json({
       message: `Chuyển trạng thái không hợp lệ: không thể chuyển từ "${order.status}" sang "${nextStatus}". Các trạng thái được phép: [${allowed.join(', ') || 'không có'}].`
-    });
+    }, 400);
   }
 
   // If transition to cancelled, restore stock
@@ -387,9 +390,9 @@ router.patch('/:id/status', authMiddleware, requireRole('admin'), async (req, re
     }
   }
 
-  const updatedOrder = await db.updateOrderStatus(orderId, nextStatus, note);
+  const updatedOrder = await db.updateOrderStatus(orderId, nextStatus, typeof note === 'string' ? note : undefined);
 
-  return res.json({
+  return c.json({
     message: 'Cập nhật trạng thái đơn hàng thành công',
     order: {
       ...updatedOrder,

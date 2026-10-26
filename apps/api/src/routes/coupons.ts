@@ -1,28 +1,28 @@
-import { Router } from 'express';
+import { Hono } from 'hono';
 import { getDatabase } from '../lib/database.js';
 
-const couponsRouter = Router();
+const router = new Hono();
 
 // GET /api/coupons (list active coupons)
-couponsRouter.get('/', async (_req, res) => {
+router.get('/', async (c) => {
   const db = await getDatabase();
   const coupons = await db.listCoupons();
-  res.json({
+  return c.json({
     success: true,
     coupons
   });
 });
 
 // POST /api/coupons/apply (validate and calculate discount)
-couponsRouter.post('/apply', async (req, res) => {
-  const { code, subtotal } = req.body ?? {};
+router.post('/apply', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const { code, subtotal } = body ?? {};
 
   if (!code || typeof code !== 'string') {
-    res.status(400).json({
+    return c.json({
       success: false,
       message: 'Vui lòng cung cấp mã voucher giảm giá.'
-    });
-    return;
+    }, 400);
   }
 
   const orderSubtotal = Math.max(0, Number(subtotal) || 0);
@@ -30,19 +30,17 @@ couponsRouter.post('/apply', async (req, res) => {
   const coupon = await db.getCoupon(code);
 
   if (!coupon) {
-    res.status(404).json({
+    return c.json({
       success: false,
       message: 'Mã giảm giá không tồn tại hoặc đã hết hạn.'
-    });
-    return;
+    }, 404);
   }
 
   if (coupon.minOrderValue && orderSubtotal < coupon.minOrderValue) {
-    res.status(400).json({
+    return c.json({
       success: false,
       message: `Mã "${coupon.code}" chỉ áp dụng cho đơn hàng từ ${coupon.minOrderValue.toLocaleString('vi-VN')}đ trở lên.`
-    });
-    return;
+    }, 400);
   }
 
   let discountAmount = 0;
@@ -52,7 +50,7 @@ couponsRouter.post('/apply', async (req, res) => {
     discountAmount = Math.min(orderSubtotal, coupon.value);
   }
 
-  res.json({
+  return c.json({
     success: true,
     message: `Áp dụng thành công mã "${coupon.code}": Giảm ${discountAmount.toLocaleString('vi-VN')}đ!`,
     coupon: {
@@ -66,5 +64,4 @@ couponsRouter.post('/apply', async (req, res) => {
   });
 });
 
-export default couponsRouter;
-
+export default router;

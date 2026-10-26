@@ -1,51 +1,32 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-
-function createMockRes() {
-  const res: any = {
-    statusCode: 200,
-    body: null,
-    status(code: number) {
-      this.statusCode = code;
-      return this;
-    },
-    json(data: any) {
-      this.body = data;
-      return this;
-    }
-  };
-  return res;
-}
+import app from '../index.js';
+import { getDatabase } from '../lib/database.js';
+import { createToken } from '../middleware/auth.js';
 
 test('Category CRUD: list, create, update, delete in database', async () => {
-  const { default: categoriesRouter } = await import('./categories.js');
-  const { getDatabase } = await import('../lib/database.js');
   const db = await getDatabase();
-
-  const getRoute = (categoriesRouter as any).stack.find((l: any) => l.route?.path === '/' && l.route?.methods?.get);
-  assert.ok(getRoute);
-  const [getHandler] = getRoute.route.stack.map((s: any) => s.handle);
-
-  const postRoute = (categoriesRouter as any).stack.find((l: any) => l.route?.path === '/' && l.route?.methods?.post);
-  assert.ok(postRoute);
-  const [, , postHandler] = postRoute.route.stack.map((s: any) => s.handle);
+  const adminToken = createToken({ id: 'admin-1', email: 'admin@cafeshop.vn', name: 'Admin', role: 'admin' });
 
   // 1. List categories
-  const listRes = createMockRes();
-  await getHandler({}, listRes);
-  assert.equal(listRes.statusCode, 200);
-  assert.ok(Array.isArray(listRes.body.categories));
-  const initialCount = listRes.body.categories.length;
+  const listRes = await app.request('/api/categories', { method: 'GET' });
+  assert.equal(listRes.status, 200);
+  const listData = await listRes.json();
+  assert.ok(Array.isArray(listData.categories));
+  const initialCount = listData.categories.length;
 
   // 2. Create category
-  const createReq: any = {
-    body: { name: 'Cà phê ủ lạnh Cold Brew' },
-    user: { id: 'admin-1', role: 'admin' }
-  };
-  const createRes = createMockRes();
-  await postHandler(createReq, createRes);
-  assert.equal(createRes.statusCode, 201);
-  const createdCat = createRes.body.category;
+  const createRes = await app.request('/api/categories', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${adminToken}`
+    },
+    body: JSON.stringify({ name: 'Cà phê ủ lạnh Cold Brew' })
+  });
+  assert.equal(createRes.status, 201);
+  const createData = await createRes.json();
+  const createdCat = createData.category;
   assert.equal(createdCat.name, 'Cà phê ủ lạnh Cold Brew');
 
   const afterCreateList = await db.listCategories();
@@ -62,4 +43,3 @@ test('Category CRUD: list, create, update, delete in database', async () => {
   const afterDeleteList = await db.listCategories();
   assert.equal(afterDeleteList.length, initialCount);
 });
-

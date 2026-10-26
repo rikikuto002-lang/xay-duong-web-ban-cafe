@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { Request, Response, NextFunction } from 'express';
+import type { Context, Next } from 'hono';
 import { env } from '../config/env.js';
 
 export type UserRole = 'guest' | 'customer' | 'admin';
@@ -9,14 +9,6 @@ export interface AuthUser {
   email: string;
   name: string;
   role: UserRole;
-}
-
-declare global {
-  namespace Express {
-    interface Request {
-      user?: AuthUser;
-    }
-  }
 }
 
 const sessions = new Map<string, AuthUser>();
@@ -104,37 +96,40 @@ export function verifyToken(token: string): AuthUser | null {
   }
 }
 
-export function authMiddleware(req: Request, res: Response, next: NextFunction): void {
-  const authHeader = req.headers.authorization ?? '';
+export type AuthEnv = {
+  Variables: {
+    user: AuthUser;
+  };
+};
+
+export async function authMiddleware(c: Context<any>, next: Next) {
+  const authHeader = c.req.header('authorization') ?? '';
   const token = authHeader.replace(/^Bearer\s+/i, '');
 
   if (!token) {
-    res.status(401).json({ message: 'Bạn chưa đăng nhập.' });
-    return;
+    return c.json({ message: 'Bạn chưa đăng nhập.' }, 401);
   }
 
   const user = verifyToken(token) ?? getSession(token);
   if (!user) {
-    res.status(401).json({ message: 'Phiên đăng nhập không hợp lệ hoặc đã hết hạn.' });
-    return;
+    return c.json({ message: 'Phiên đăng nhập không hợp lệ hoặc đã hết hạn.' }, 401);
   }
 
-  req.user = user;
-  next();
+  c.set('user', user);
+  await next();
 }
 
 export function requireRole(...roles: UserRole[]) {
-  return (req: Request, res: Response, next: NextFunction): void => {
-    if (!req.user) {
-      res.status(401).json({ message: 'Bạn chưa đăng nhập.' });
-      return;
+  return async (c: Context<any>, next: Next) => {
+    const user = c.get('user') as AuthUser | undefined;
+    if (!user) {
+      return c.json({ message: 'Bạn chưa đăng nhập.' }, 401);
     }
 
-    if (!roles.includes(req.user.role)) {
-      res.status(403).json({ message: 'Bạn không có quyền truy cập tính năng này.' });
-      return;
+    if (!roles.includes(user.role)) {
+      return c.json({ message: 'Bạn không có quyền truy cập tính năng này.' }, 403);
     }
 
-    next();
+    await next();
   };
 }

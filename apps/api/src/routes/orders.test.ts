@@ -1,8 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+import app from '../index.js';
 import { products } from '../data/mockData.js';
-import { validateCheckoutPayload } from './orders.js';
+import { validateCheckoutPayload, generateVietQrUrl } from './orders.js';
+import { getDatabase } from '../lib/database.js';
+import { createToken } from '../middleware/auth.js';
 
 test('checkout rejects invalid stock before creating an order', () => {
   const result = validateCheckoutPayload(
@@ -42,7 +45,6 @@ test('checkout recalculates total from server-side product prices', () => {
 });
 
 test('order creation persists both order metadata and order item records', async () => {
-  const { getDatabase } = await import('../lib/database.js');
   const db = await getDatabase();
 
   const created = await db.createOrder({
@@ -64,27 +66,7 @@ test('order creation persists both order metadata and order item records', async
   assert.deepEqual((await db.listOrders('customer@example.com')).length >= 1, true);
 });
 
-// Helper for testing express router handlers in-memory without TCP socket
-function createMockRes() {
-  const res: any = {
-    statusCode: 200,
-    body: null,
-    status(code: number) {
-      this.statusCode = code;
-      return this;
-    },
-    json(data: any) {
-      this.body = data;
-      return this;
-    }
-  };
-  return res;
-}
-
 test('GET /api/orders enforces auth and ignores client-supplied ?role=admin query param', async () => {
-  const { default: ordersRouter } = await import('./orders.js');
-  const { authMiddleware } = await import('../middleware/auth.js');
-  const { getDatabase } = await import('../lib/database.js');
   const db = await getDatabase();
 
   const order1 = await db.createOrder({
@@ -109,50 +91,37 @@ test('GET /api/orders enforces auth and ignores client-supplied ?role=admin quer
     items: [{ productId: 2, quantity: 1, price: 60000, name: 'Cappuccino' }]
   });
 
-  // Find router handlers
-  const listRoute = (ordersRouter as any).stack.find((layer: any) => layer.route?.path === '/' && layer.route?.methods?.get);
-  assert.ok(listRoute, 'GET / handler found');
-  const [authMw, listHandler] = listRoute.route.stack.map((s: any) => s.handle);
-
   // 1. Without auth token -> 401
-  const unauthReq: any = { headers: {}, query: { role: 'admin' } };
-  const unauthRes = createMockRes();
-  let nextCalled = false;
-  authMw(unauthReq, unauthRes, () => { nextCalled = true; });
-  assert.equal(nextCalled, false);
-  assert.equal(unauthRes.statusCode, 401);
+  const unauthRes = await app.request('/api/orders?role=admin', { method: 'GET' });
+  assert.equal(unauthRes.status, 401);
 
   // 2. Customer user with ?role=admin query param -> role must remain customer, only seeing Alice's orders
-  const customerReq: any = {
-    headers: {},
-    query: { role: 'admin' },
-    user: { id: 'alice-1', email: 'alice@example.com', name: 'Alice', role: 'customer' }
-  };
-  const customerRes = createMockRes();
-  await listHandler(customerReq, customerRes);
-  assert.equal(customerRes.statusCode, 200);
-  assert.ok(customerRes.body.orders.length > 0);
-  for (const o of customerRes.body.orders) {
+  const aliceToken = createToken({ id: 'alice-1', email: 'alice@example.com', name: 'Alice', role: 'customer' });
+  const customerRes = await app.request('/api/orders?role=admin', {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${aliceToken}` }
+  });
+  assert.equal(customerRes.status, 200);
+  const customerData = await customerRes.json();
+  assert.ok(customerData.orders.length > 0);
+  for (const o of customerData.orders) {
     assert.equal(o.customerEmail.toLowerCase(), 'alice@example.com');
   }
 
   // 3. Admin user -> sees all orders
-  const adminReq: any = {
-    headers: {},
-    query: {},
-    user: { id: 'admin-1', email: 'admin@cafeshop.vn', name: 'Admin', role: 'admin' }
-  };
-  const adminRes = createMockRes();
-  await listHandler(adminReq, adminRes);
-  assert.equal(adminRes.statusCode, 200);
-  const ids = adminRes.body.orders.map((o: any) => o.id);
+  const adminToken = createToken({ id: 'admin-1', email: 'admin@cafeshop.vn', name: 'Admin', role: 'admin' });
+  const adminRes = await app.request('/api/orders', {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${adminToken}` }
+  });
+  assert.equal(adminRes.status, 200);
+  const adminData = await adminRes.json();
+  const ids = adminData.orders.map((o: any) => o.id);
   assert.ok(ids.includes(order1.id));
   assert.ok(ids.includes(order2.id));
 });
 
 test('GET /api/orders/:id prevents IDOR: customer cannot access another customer order', async () => {
-  const { default: ordersRouter } = await import('./orders.js');
-  const { getDatabase } = await import('../lib/database.js');
   const db = await getDatabase();
 
   const bobsOrder = await db.createOrder({
@@ -166,84 +135,88 @@ test('GET /api/orders/:id prevents IDOR: customer cannot access another customer
     items: [{ productId: 1, quantity: 2, price: 60000, name: 'Item' }]
   });
 
-  const getByIdRoute = (ordersRouter as any).stack.find((layer: any) => layer.route?.path === '/:id' && layer.route?.methods?.get);
-  assert.ok(getByIdRoute, 'GET /:id handler found');
-  const [, getByIdHandler] = getByIdRoute.route.stack.map((s: any) => s.handle);
+  const aliceToken = createToken({ id: 'alice-1', email: 'alice@example.com', name: 'Alice', role: 'customer' });
+  const bobToken = createToken({ id: 'bob-1', email: 'bob_secret@example.com', name: 'Bob Secret', role: 'customer' });
+  const adminToken = createToken({ id: 'admin-1', email: 'admin@cafeshop.vn', name: 'Admin', role: 'admin' });
 
   // Alice tries to get Bob's order by ID -> 403 Forbidden
-  const aliceReq: any = {
-    params: { id: bobsOrder.id },
-    user: { id: 'alice-1', email: 'alice@example.com', name: 'Alice', role: 'customer' }
-  };
-  const aliceRes = createMockRes();
-  await getByIdHandler(aliceReq, aliceRes);
-  assert.equal(aliceRes.statusCode, 403);
-  assert.match(aliceRes.body.message, /không có quyền/i);
+  const aliceRes = await app.request(`/api/orders/${bobsOrder.id}`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${aliceToken}` }
+  });
+  assert.equal(aliceRes.status, 403);
+  const aliceData = await aliceRes.json();
+  assert.match(aliceData.message, /không có quyền/i);
 
   // Bob requests own order -> 200 OK
-  const bobReq: any = {
-    params: { id: bobsOrder.id },
-    user: { id: 'bob-1', email: 'bob_secret@example.com', name: 'Bob Secret', role: 'customer' }
-  };
-  const bobRes = createMockRes();
-  await getByIdHandler(bobReq, bobRes);
-  assert.equal(bobRes.statusCode, 200);
-  assert.equal(bobRes.body.order.id, bobsOrder.id);
+  const bobRes = await app.request(`/api/orders/${bobsOrder.id}`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${bobToken}` }
+  });
+  assert.equal(bobRes.status, 200);
+  const bobData = await bobRes.json();
+  assert.equal(bobData.order.id, bobsOrder.id);
 
   // Admin requests Bob's order -> 200 OK
-  const adminReq: any = {
-    params: { id: bobsOrder.id },
-    user: { id: 'admin-1', email: 'admin@cafeshop.vn', name: 'Admin', role: 'admin' }
-  };
-  const adminRes = createMockRes();
-  await getByIdHandler(adminReq, adminRes);
-  assert.equal(adminRes.statusCode, 200);
-  assert.equal(adminRes.body.order.id, bobsOrder.id);
+  const adminRes = await app.request(`/api/orders/${bobsOrder.id}`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${adminToken}` }
+  });
+  assert.equal(adminRes.status, 200);
+  const adminData = await adminRes.json();
+  assert.equal(adminData.order.id, bobsOrder.id);
 });
 
-
 test('POST /api/orders/checkout validates stock from DB, deducts stock, and saves order items', async () => {
-  const { default: ordersRouter } = await import('./orders.js');
-  const { getDatabase } = await import('../lib/database.js');
   const db = await getDatabase();
   const product = await db.getProductById(1);
   assert.ok(product);
   const initialStock = product.stock;
-
-  const checkoutRoute = (ordersRouter as any).stack.find((l: any) => l.route?.path === '/checkout' && l.route?.methods?.post);
-  assert.ok(checkoutRoute);
-  const [, checkoutHandler] = checkoutRoute.route.stack.map((s: any) => s.handle);
+  const userToken = createToken({ id: 'user-1', email: 'test@example.com', name: 'Test', role: 'customer' });
 
   // 1. Checkout exceeding stock -> returns 409 and stock is unchanged
-  const badReq: any = {
-    body: { customerName: 'Khách test', phone: '0912345678', address: '123 Đường', items: [{ productId: 1, quantity: initialStock + 10 }] },
-    user: { id: 'user-1', email: 'test@example.com', name: 'Test', role: 'customer' }
-  };
-  const badRes = createMockRes();
-  await checkoutHandler(badReq, badRes);
-  assert.equal(badRes.statusCode, 409);
+  const badRes = await app.request('/api/orders/checkout', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${userToken}`
+    },
+    body: JSON.stringify({
+      customerName: 'Khách test',
+      phone: '0912345678',
+      address: '123 Đường',
+      items: [{ productId: 1, quantity: initialStock + 10 }]
+    })
+  });
+  assert.equal(badRes.status, 409);
   const productAfterFail = await db.getProductById(1);
   assert.equal(productAfterFail?.stock, initialStock);
 
   // 2. Checkout valid -> returns 201, deducts stock and saves order_items
-  const goodReq: any = {
-    body: { customerName: 'Khách test', phone: '0912345678', address: '123 Đường', items: [{ productId: 1, quantity: 2 }] },
-    user: { id: 'user-1', email: 'test@example.com', name: 'Test', role: 'customer' }
-  };
-  const goodRes = createMockRes();
-  await checkoutHandler(goodReq, goodRes);
-  assert.equal(goodRes.statusCode, 201);
-  assert.ok(goodRes.body.order?.id);
-  assert.equal(goodRes.body.order.items.length, 1);
-  assert.equal(goodRes.body.order.items[0].quantity, 2);
+  const goodRes = await app.request('/api/orders/checkout', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${userToken}`
+    },
+    body: JSON.stringify({
+      customerName: 'Khách test',
+      phone: '0912345678',
+      address: '123 Đường',
+      items: [{ productId: 1, quantity: 2 }]
+    })
+  });
+  assert.equal(goodRes.status, 201);
+  const goodData = await goodRes.json();
+  assert.ok(goodData.order?.id);
+  assert.equal(goodData.order.items.length, 1);
+  assert.equal(goodData.order.items[0].quantity, 2);
 
   const productAfterSuccess = await db.getProductById(1);
   assert.equal(productAfterSuccess?.stock, initialStock - 2);
 });
 
-
-test('generateVietQrUrl generates dynamic NAPAS/VietQR payment URL', async () => {
-  const { generateVietQrUrl } = await import('./orders.js');
+test('generateVietQrUrl generates dynamic NAPAS/VietQR payment URL', () => {
   const url = generateVietQrUrl({
     amount: 145000,
     orderId: 'ORD-999',
@@ -255,8 +228,6 @@ test('generateVietQrUrl generates dynamic NAPAS/VietQR payment URL', async () =>
 });
 
 test('Webhook /api/orders/webhook/payment automatically reconciles payment and switches status to paid', async () => {
-  const { default: ordersRouter } = await import('./orders.js');
-  const { getDatabase } = await import('../lib/database.js');
   const db = await getDatabase();
 
   const order = await db.createOrder({
@@ -271,23 +242,20 @@ test('Webhook /api/orders/webhook/payment automatically reconciles payment and s
     items: [{ productId: 1, quantity: 2, price: 45000, name: 'Cafe' }]
   });
 
-  const webhookRoute = (ordersRouter as any).stack.find((l: any) => l.route?.path === '/webhook/payment' && l.route?.methods?.post);
-  assert.ok(webhookRoute);
-  const [webhookHandler] = webhookRoute.route.stack.map((s: any) => s.handle);
-
-  const req: any = {
-    body: {
+  const res = await app.request('/api/orders/webhook/payment', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
       orderId: order.id,
       amount: 105000,
       transactionId: 'TXN-ABC123XYZ',
       content: `CAFE ${order.id}`
-    }
-  };
-  const res = createMockRes();
-  await webhookHandler(req, res);
+    })
+  });
 
-  assert.equal(res.statusCode, 200);
-  assert.equal(res.body.success, true);
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.success, true);
 
   const updated = await db.getOrderById(order.id);
   assert.equal(updated?.paymentStatus, 'paid');
@@ -296,8 +264,6 @@ test('Webhook /api/orders/webhook/payment automatically reconciles payment and s
 });
 
 test('Customer can cancel pending order and product stock is restored', async () => {
-  const { default: ordersRouter } = await import('./orders.js');
-  const { getDatabase } = await import('../lib/database.js');
   const db = await getDatabase();
 
   const product = await db.getProductById(2);
@@ -316,19 +282,17 @@ test('Customer can cancel pending order and product stock is restored', async ()
     items: [{ productId: 2, quantity: 3, price: 59000, name: 'Cappuccino' }]
   });
 
-  const cancelRoute = (ordersRouter as any).stack.find((l: any) => l.route?.path === '/:id/cancel' && l.route?.methods?.post);
-  assert.ok(cancelRoute);
-  const [, cancelHandler] = cancelRoute.route.stack.map((s: any) => s.handle);
+  const cancelToken = createToken({ id: 'user-c', email: 'cancel_user@example.com', name: 'Cancel User', role: 'customer' });
+  const res = await app.request(`/api/orders/${order.id}/cancel`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${cancelToken}`
+    },
+    body: JSON.stringify({ reason: 'Khách đổi ý' })
+  });
 
-  const req: any = {
-    params: { id: order.id },
-    body: { reason: 'Khách đổi ý' },
-    user: { id: 'user-c', email: 'cancel_user@example.com', name: 'Cancel User', role: 'customer' }
-  };
-  const res = createMockRes();
-  await cancelHandler(req, res);
-
-  assert.equal(res.statusCode, 200);
+  assert.equal(res.status, 200);
   const updatedOrder = await db.getOrderById(order.id);
   assert.equal(updatedOrder?.status, 'cancelled');
 
@@ -338,8 +302,6 @@ test('Customer can cancel pending order and product stock is restored', async ()
 });
 
 test('State transitions are strictly validated (cannot transition completed -> pending)', async () => {
-  const { default: ordersRouter } = await import('./orders.js');
-  const { getDatabase } = await import('../lib/database.js');
   const db = await getDatabase();
 
   const order = await db.createOrder({
@@ -354,19 +316,17 @@ test('State transitions are strictly validated (cannot transition completed -> p
     items: [{ productId: 1, quantity: 1, price: 45000, name: 'Cafe' }]
   });
 
-  const patchRoute = (ordersRouter as any).stack.find((l: any) => l.route?.path === '/:id/status' && l.route?.methods?.patch);
-  assert.ok(patchRoute);
-  const [, , patchHandler] = patchRoute.route.stack.map((s: any) => s.handle);
+  const adminToken = createToken({ id: 'admin-1', email: 'admin@cafeshop.vn', name: 'Admin', role: 'admin' });
+  const res = await app.request(`/api/orders/${order.id}/status`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${adminToken}`
+    },
+    body: JSON.stringify({ status: 'pending' })
+  });
 
-  // Admin attempts illegal transition: completed -> pending
-  const req: any = {
-    params: { id: order.id },
-    body: { status: 'pending' },
-    user: { id: 'admin-1', email: 'admin@cafeshop.vn', name: 'Admin', role: 'admin' }
-  };
-  const res = createMockRes();
-  await patchHandler(req, res);
-
-  assert.equal(res.statusCode, 400);
-  assert.match(res.body.message, /không hợp lệ/i);
+  assert.equal(res.status, 400);
+  const data = await res.json();
+  assert.match(data.message, /không hợp lệ/i);
 });

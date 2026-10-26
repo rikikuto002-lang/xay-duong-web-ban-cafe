@@ -1,14 +1,22 @@
-import { Router } from 'express';
-import { authMiddleware, requireRole, createToken, getSession, setSession, hashPassword, verifyPassword, type AuthUser, type UserRole } from '../middleware/auth.js';
+import { Hono } from 'hono';
+import {
+  authMiddleware,
+  requireRole,
+  createToken,
+  setSession,
+  hashPassword,
+  verifyPassword,
+  type AuthUser,
+  type UserRole,
+  type AuthEnv
+} from '../middleware/auth.js';
 
-const router = Router();
+const router = new Hono<AuthEnv>();
 
 type StoredUser = AuthUser & { passwordHash: string };
 
-// In-memory user store (replace with database in production)
 const users = new Map<string, StoredUser>();
 
-// Initialize with demo users (passwords are hashed)
 const initUsers = () => {
   const guestHash = hashPassword('guest123');
   const customerHash = hashPassword('customer123');
@@ -39,18 +47,19 @@ const initUsers = () => {
 
 initUsers();
 
-router.post('/register', async (req, res) => {
-  const { name, email, password, role } = req.body ?? {};
+router.post('/register', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const { name, email, password } = body ?? {};
 
   if (!name || !email || !password) {
-    return res.status(400).json({ message: 'Tên, email và mật khẩu là bắt buộc.' });
+    return c.json({ message: 'Tên, email và mật khẩu là bắt buộc.' }, 400);
   }
 
   const normalizedEmail = String(email).trim().toLowerCase();
   const existingUser = users.get(normalizedEmail);
 
   if (existingUser) {
-    return res.status(409).json({ message: 'Tài khoản với email này đã tồn tại.' });
+    return c.json({ message: 'Tài khoản với email này đã tồn tại.' }, 409);
   }
 
   const nextRole: UserRole = 'customer';
@@ -68,7 +77,7 @@ router.post('/register', async (req, res) => {
   const token = createToken(newUser);
   setSession(token, newUser);
 
-  return res.status(201).json({
+  return c.json({
     message: 'Tạo tài khoản thành công',
     token,
     user: {
@@ -77,31 +86,32 @@ router.post('/register', async (req, res) => {
       email: newUser.email,
       role: newUser.role
     }
-  });
+  }, 201);
 });
 
-router.post('/login', async (req, res) => {
-  const { email, password, role } = req.body ?? {};
+router.post('/login', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const { email, password, role } = body ?? {};
 
   if (!email || !password) {
-    return res.status(400).json({ message: 'Email và mật khẩu là bắt buộc.' });
+    return c.json({ message: 'Email và mật khẩu là bắt buộc.' }, 400);
   }
 
   const normalizedEmail = String(email).trim().toLowerCase();
   const user = users.get(normalizedEmail);
 
   if (!user || !verifyPassword(String(password), user.passwordHash)) {
-    return res.status(401).json({ message: 'Thông tin đăng nhập không chính xác.' });
+    return c.json({ message: 'Thông tin đăng nhập không chính xác.' }, 401);
   }
 
   if (role && user.role !== role) {
-    return res.status(403).json({ message: 'Vai trò không khớp với tài khoản này.' });
+    return c.json({ message: 'Vai trò không khớp với tài khoản này.' }, 403);
   }
 
   const token = createToken(user);
   setSession(token, user);
 
-  return res.json({
+  return c.json({
     message: 'Đăng nhập thành công',
     token,
     user: {
@@ -113,26 +123,27 @@ router.post('/login', async (req, res) => {
   });
 });
 
-router.get('/me', authMiddleware, (req, res) => {
-  return res.json({
+router.get('/me', authMiddleware, (c) => {
+  const user = c.get('user') as AuthUser | undefined;
+  return c.json({
     user: {
-      id: req.user?.id,
-      name: req.user?.name,
-      email: req.user?.email,
-      role: req.user?.role
+      id: user?.id,
+      name: user?.name,
+      email: user?.email,
+      role: user?.role
     }
   });
 });
 
 // Admin only: list all users
-router.get('/users', authMiddleware, requireRole('admin'), (req, res) => {
+router.get('/users', authMiddleware, requireRole('admin'), (c) => {
   const userList = Array.from(users.values()).map(u => ({
     id: u.id,
     name: u.name,
     email: u.email,
     role: u.role
   }));
-  res.json({ users: userList });
+  return c.json({ users: userList });
 });
 
 export default router;

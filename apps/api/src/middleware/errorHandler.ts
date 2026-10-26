@@ -1,48 +1,47 @@
-import type { Request, Response, NextFunction } from 'express';
+import type { Context, Next } from 'hono';
 import { logger } from '../lib/logger.js';
 
-export function requestLogger(req: Request, res: Response, next: NextFunction) {
+export async function requestLogger(c: Context, next: Next) {
   const start = Date.now();
   const requestId = `req-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-  res.setHeader('X-Request-Id', requestId);
+  c.header('X-Request-Id', requestId);
 
-  res.on('finish', () => {
-    const durationMs = Date.now() - start;
-    const logData = {
-      requestId,
-      method: req.method,
-      url: req.originalUrl,
-      status: res.statusCode,
-      durationMs
-    };
+  await next();
 
-    if (res.statusCode >= 500) {
-      logger.error('HTTP Request failed with server error', logData);
-    } else if (res.statusCode >= 400) {
-      logger.warn('HTTP Request failed with client error', logData);
-    } else {
-      logger.info('HTTP Request processed successfully', logData);
-    }
-  });
+  const durationMs = Date.now() - start;
+  const status = c.res.status;
+  const logData = {
+    requestId,
+    method: c.req.method,
+    url: c.req.url,
+    status,
+    durationMs
+  };
 
-  next();
+  if (status >= 500) {
+    logger.error('HTTP Request failed with server error', logData);
+  } else if (status >= 400) {
+    logger.warn('HTTP Request failed with client error', logData);
+  } else {
+    logger.info('HTTP Request processed successfully', logData);
+  }
 }
 
-export function errorHandler(err: unknown, req: Request, res: Response, _next: NextFunction) {
+export function errorHandler(err: unknown, c: Context) {
   const error = err instanceof Error ? err : new Error(String(err));
-  const requestId = res.getHeader('X-Request-Id') as string | undefined;
+  const requestId = c.res.headers.get('X-Request-Id') ?? undefined;
 
   logger.error('Unhandled Application Exception Caught', {
     requestId,
-    method: req.method,
-    url: req.originalUrl,
+    method: c.req.method,
+    url: c.req.url,
     error
   });
 
-  res.status(500).json({
+  return c.json({
     success: false,
     message: 'Đã xảy ra lỗi máy chủ nội bộ. Vui lòng thử lại sau.',
     requestId,
     ...(process.env.NODE_ENV !== 'production' ? { stack: error.stack } : {})
-  });
+  }, 500);
 }

@@ -1,10 +1,10 @@
-import { Router } from 'express';
+import { Hono } from 'hono';
 import { getDatabase } from '../lib/database.js';
 import { authMiddleware, requireRole } from '../middleware/auth.js';
 
-const router = Router();
+const router = new Hono();
 
-router.get('/stats', authMiddleware, requireRole('admin'), async (_req, res) => {
+router.get('/stats', authMiddleware, requireRole('admin'), async (c) => {
   const db = await getDatabase();
   const orders = await db.listOrders();
   const products = await db.listProducts();
@@ -51,7 +51,6 @@ router.get('/stats', authMiddleware, requireRole('admin'), async (_req, res) => 
     categoryMap.set(cat.name, 0);
   }
 
-  // Count products per category
   for (const prod of products) {
     const current = categoryMap.get(prod.category) ?? 0;
     categoryMap.set(prod.category, current + 1);
@@ -62,7 +61,7 @@ router.get('/stats', authMiddleware, requireRole('admin'), async (_req, res) => 
     count
   }));
 
-  return res.json({
+  return c.json({
     revenue,
     paidRevenue,
     ordersCount: orders.length,
@@ -79,4 +78,3 @@ router.get('/stats', authMiddleware, requireRole('admin'), async (_req, res) => 
 });
 
 export default router;
-

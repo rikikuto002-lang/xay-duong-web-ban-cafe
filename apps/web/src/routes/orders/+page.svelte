@@ -8,7 +8,7 @@
   const routeState = { data, params };
   void routeState;
 
-  const API_URL = import.meta.env.PUBLIC_API_URL ?? 'http://localhost:4000';
+  const API_URL = import.meta.env.PUBLIC_API_URL ?? '';
 
   type OrderStatus = 'pending' | 'confirmed' | 'shipping' | 'completed' | 'cancelled';
   type PaymentStatus = 'unpaid' | 'paid';

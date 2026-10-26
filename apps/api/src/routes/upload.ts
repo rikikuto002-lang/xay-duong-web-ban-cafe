@@ -1,16 +1,17 @@
-import { Router } from 'express';
+import { Hono } from 'hono';
 import fs from 'node:fs';
 import path from 'node:path';
 import { authMiddleware, requireRole } from '../middleware/auth.js';
 
-const router = Router();
+const router = new Hono();
 
-router.post('/', authMiddleware, requireRole('admin'), (req, res) => {
+router.post('/', authMiddleware, requireRole('admin'), async (c) => {
   try {
-    const { imageBase64, fileName } = req.body ?? {};
+    const body = await c.req.json().catch(() => ({}));
+    const { imageBase64, fileName } = body ?? {};
 
     if (!imageBase64) {
-      return res.status(400).json({ message: 'Vui lòng cung cấp dữ liệu hình ảnh (base64).' });
+      return c.json({ message: 'Vui lòng cung cấp dữ liệu hình ảnh (base64).' }, 400);
     }
 
     const matches = String(imageBase64).match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
@@ -30,7 +31,6 @@ router.post('/', authMiddleware, requireRole('admin'), (req, res) => {
     const cleanBase = fileName ? path.basename(String(fileName), path.extname(String(fileName))) : 'img';
     const targetFileName = `${cleanBase.replace(/[^a-zA-Z0-9_-]/g, '')}-${Date.now()}.${ext}`;
 
-    // Path resolution for static/uploads in apps/web
     const candidates = [
       path.resolve(process.cwd(), 'apps/web/static/uploads'),
       path.resolve(process.cwd(), '../web/static/uploads'),
@@ -46,15 +46,14 @@ router.post('/', authMiddleware, requireRole('admin'), (req, res) => {
     fs.writeFileSync(filePath, buffer);
 
     const publicUrl = `/uploads/${targetFileName}`;
-    return res.status(201).json({
+    return c.json({
       message: 'Tải ảnh lên thành công',
       url: publicUrl,
       fileName: targetFileName
-    });
+    }, 201);
   } catch (error: any) {
-    return res.status(500).json({ message: 'Lỗi tải ảnh lên: ' + error.message });
+    return c.json({ message: 'Lỗi tải ảnh lên: ' + error.message }, 500);
   }
 });
 
 export default router;
-

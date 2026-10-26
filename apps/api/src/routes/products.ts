@@ -1,36 +1,37 @@
-import { Router } from 'express';
+import { Hono } from 'hono';
 import { getDatabase } from '../lib/database.js';
 import { authMiddleware, requireRole } from '../middleware/auth.js';
 
-const router = Router();
+const router = new Hono();
 
 // Public: list products
-router.get('/', async (req, res) => {
-  const { category } = req.query;
+router.get('/', async (c) => {
+  const category = c.req.query('category');
   const db = await getDatabase();
   const products = await db.listProducts(category ? String(category) : undefined);
 
-  res.json({
+  return c.json({
     message: 'Danh sách sản phẩm',
     products
   });
 });
 
 // Public: get product by ID
-router.get('/:id', async (req, res) => {
+router.get('/:id', async (c) => {
   const db = await getDatabase();
-  const product = await db.getProductById(Number(req.params.id));
+  const id = Number(c.req.param('id'));
+  const product = await db.getProductById(id);
 
   if (!product) {
-    return res.status(404).json({ message: 'Không tìm thấy sản phẩm' });
+    return c.json({ message: 'Không tìm thấy sản phẩm' }, 404);
   }
 
-  return res.json({ product });
+  return c.json({ product });
 });
 
 // Admin only: create product
-router.post('/', authMiddleware, requireRole('admin'), async (req, res) => {
-  const payload = req.body;
+router.post('/', authMiddleware, requireRole('admin'), async (c) => {
+  const payload = await c.req.json().catch(() => ({}));
   const db = await getDatabase();
 
   const newProduct = await db.createProduct({
@@ -43,17 +44,17 @@ router.post('/', authMiddleware, requireRole('admin'), async (req, res) => {
     description: payload.description ?? 'Sản phẩm mới'
   });
 
-  res.status(201).json({
+  return c.json({
     message: 'Thêm sản phẩm thành công',
     product: newProduct
-  });
+  }, 201);
 });
 
 // Admin only: update product
-router.put('/:id', authMiddleware, requireRole('admin'), async (req, res) => {
-  const payload = req.body;
+router.put('/:id', authMiddleware, requireRole('admin'), async (c) => {
+  const payload = await c.req.json().catch(() => ({}));
   const db = await getDatabase();
-  const id = Number(req.params.id);
+  const id = Number(c.req.param('id'));
 
   const updated = await db.updateProduct(id, {
     name: payload.name,
@@ -65,26 +66,26 @@ router.put('/:id', authMiddleware, requireRole('admin'), async (req, res) => {
   });
 
   if (!updated) {
-    return res.status(404).json({ message: 'Không tìm thấy sản phẩm để cập nhật' });
+    return c.json({ message: 'Không tìm thấy sản phẩm để cập nhật' }, 404);
   }
 
-  return res.json({
+  return c.json({
     message: 'Cập nhật sản phẩm thành công',
     product: updated
   });
 });
 
 // Admin only: delete product
-router.delete('/:id', authMiddleware, requireRole('admin'), async (req, res) => {
+router.delete('/:id', authMiddleware, requireRole('admin'), async (c) => {
   const db = await getDatabase();
-  const id = Number(req.params.id);
+  const id = Number(c.req.param('id'));
 
   const deleted = await db.deleteProduct(id);
   if (!deleted) {
-    return res.status(404).json({ message: 'Không tìm thấy sản phẩm để xoá' });
+    return c.json({ message: 'Không tìm thấy sản phẩm để xoá' }, 404);
   }
 
-  return res.json({ message: 'Xoá sản phẩm thành công', id });
+  return c.json({ message: 'Xoá sản phẩm thành công', id });
 });
 
 export default router;

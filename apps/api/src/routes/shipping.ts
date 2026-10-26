@@ -1,36 +1,35 @@
-import { Router } from 'express';
+import { Hono } from 'hono';
 import { SHIPPING_ZONES, calculateShippingFee } from '../lib/database.js';
 
-const shippingRouter = Router();
+const shippingRouter = new Hono();
 
 // GET /api/shipping/zones (list shipping zones)
-shippingRouter.get('/zones', (_req, res) => {
-  res.json({
+shippingRouter.get('/zones', (c) => {
+  return c.json({
     success: true,
     zones: SHIPPING_ZONES
   });
 });
 
 // POST /api/shipping/calculate (calculate fee by district and subtotal)
-shippingRouter.post('/calculate', (req, res) => {
-  const { district, subtotal } = req.body ?? {};
+shippingRouter.post('/calculate', async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+  const { district, subtotal } = body;
 
   if (!district || typeof district !== 'string') {
-    res.status(400).json({
+    return c.json({
       success: false,
       message: 'Vui lòng cung cấp quận / huyện giao hàng.'
-    });
-    return;
+    }, 400);
   }
 
   const orderSubtotal = Math.max(0, Number(subtotal) || 0);
   const calculation = calculateShippingFee(district, orderSubtotal);
 
-  res.json({
+  return c.json({
     success: true,
     calculation
   });
 });
 
 export default shippingRouter;
-

@@ -9,7 +9,7 @@
   const routeState = { data, params };
   void routeState;
 
-  const API_URL = import.meta.env.PUBLIC_API_URL ?? 'http://localhost:4000';
+  const API_URL = import.meta.env.PUBLIC_API_URL ?? '';
 
   type OrderSummary = {
     id: string;

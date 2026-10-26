@@ -1,5 +1,6 @@
-import express from 'express';
-import cors from 'cors';
+import { Hono } from 'hono';
+import { cors } from 'hono/cors';
+import { serve } from '@hono/node-server';
 import { env } from './config/env.js';
 import authRouter from './routes/auth.js';
 import productsRouter from './routes/products.js';
@@ -15,14 +16,27 @@ import reviewsRouter from './routes/reviews.js';
 import { requestLogger, errorHandler } from './middleware/errorHandler.js';
 import { logger } from './lib/logger.js';
 
-const app = express();
+const app = new Hono();
 
-app.use(cors());
-app.use(express.json({ limit: '10mb' }));
-app.use(requestLogger);
+app.use('*', cors());
+app.use('*', requestLogger);
 
-app.get('/health', (_req, res) => {
-  res.json({
+// Cloudflare Workers bindings bridge
+app.use('*', async (c, next) => {
+  if (c.env) {
+    const envBindings = c.env as Record<string, unknown>;
+    if (envBindings.DB) {
+      (globalThis as Record<string, unknown>).DB = envBindings.DB;
+    }
+    if (envBindings.PRODUCT_IMAGES) {
+      (globalThis as Record<string, unknown>).PRODUCT_IMAGES = envBindings.PRODUCT_IMAGES;
+    }
+  }
+  await next();
+});
+
+app.get('/health', (c) => {
+  return c.json({
     status: 'ok',
     environment: env.nodeEnv,
     service: 'cafe-api',
@@ -30,24 +44,36 @@ app.get('/health', (_req, res) => {
   });
 });
 
-app.use('/api/auth', authRouter);
-app.use('/api/categories', categoriesRouter);
-app.use('/api/products', productsRouter);
-app.use('/api/cart', cartRouter);
-app.use('/api/orders', ordersRouter);
-app.use('/api/upload', uploadRouter);
-app.use('/api/admin', adminStatsRouter);
-app.use('/api/reservations', reservationsRouter);
-app.use('/api/coupons', couponsRouter);
-app.use('/api/shipping', shippingRouter);
-app.use('/api/reviews', reviewsRouter);
+app.route('/api/auth', authRouter);
+app.route('/api/categories', categoriesRouter);
+app.route('/api/products', productsRouter);
+app.route('/api/cart', cartRouter);
+app.route('/api/orders', ordersRouter);
+app.route('/api/upload', uploadRouter);
+app.route('/api/admin', adminStatsRouter);
+app.route('/api/reservations', reservationsRouter);
+app.route('/api/coupons', couponsRouter);
+app.route('/api/shipping', shippingRouter);
+app.route('/api/reviews', reviewsRouter);
 
-// Global Error Handler
-app.use(errorHandler);
+app.onError(errorHandler);
 
-if (process.env.NODE_ENV !== 'test') {
-  app.listen(env.port, () => {
-    logger.info(`Cafe API running at http://localhost:${env.port}`, { port: env.port });
+const isWorkers =
+  typeof (globalThis as { WebSocketPair?: unknown }).WebSocketPair !== 'undefined' ||
+  (typeof navigator !== 'undefined' && navigator.userAgent?.includes('Cloudflare-Workers'));
+
+const isTestEnv =
+  typeof process !== 'undefined' &&
+  (process.env.NODE_ENV === 'test' ||
+    Boolean(process.env.NODE_TEST_CONTEXT) ||
+    process.argv?.some((arg) => arg.includes('test')));
+
+if (!isWorkers && !isTestEnv) {
+  serve({
+    fetch: app.fetch,
+    port: env.port
+  }, () => {
+    logger.info(`Cafe API (Hono) running at http://localhost:${env.port}`, { port: env.port });
   });
 }
 
