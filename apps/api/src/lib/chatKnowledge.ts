@@ -337,10 +337,14 @@ export async function loadKnowledgeBase(): Promise<string> {
   return FALLBACK_KNOWLEDGE;
 }
 
-export type ChatIntent = 'reservation' | 'menu' | 'hours' | 'general';
+export type ChatIntent = 'greeting' | 'reservation' | 'menu' | 'hours' | 'general';
 
 export function detectChatIntent(question: string): ChatIntent {
   const q = question.toLowerCase();
+
+  if (/(xin chào|chào|hello|hi|hey|alo)/i.test(q)) {
+    return 'greeting';
+  }
 
   if (/(đặt bàn|đặt chỗ|reservation|book table|reserve|đặt chỗ tối nay)/.test(q)) {
     return 'reservation';
@@ -359,6 +363,10 @@ export function detectChatIntent(question: string): ChatIntent {
 
 export function buildScenarioPrompt(intent: ChatIntent, question: string): string {
   const normalizedQuestion = question.trim();
+
+  if (intent === 'greeting') {
+    return 'Bạn đang chào đón khách hàng. Hãy chào lại lịch sự, thân thiện bằng tiếng Việt và đề xuất hỗ trợ khách về menu, đặt bàn hoặc giờ mở cửa.';
+  }
 
   if (intent === 'reservation') {
     return 'Bạn đang xử lý tình huống KHÁCH HÀNG MUỐN ĐẶT BÀN. Hãy trả lời ngắn gọn, hướng dẫn rõ 2 cách: đặt trực tuyến hoặc gọi hotline, nêu rõ cần có thời gian, số lượng khách, khu vực muốn ngồi.';
@@ -426,6 +434,7 @@ export function buildAnswerFromKnowledge(
   const directMatches: string[] = [];
 
   const keywordMap: Array<[string[], string]> = [
+    [['xin chào', 'chào bạn', 'chào', 'hello', 'hi', 'alo'], 'Xin chào! Tôi là trợ lý AI của CafeZone. Tôi rất vui được hỗ trợ bạn tìm hiểu thực đơn, đặt bàn hoặc giờ mở cửa của quán.'],
     [['cappuccino', 'latte', 'espresso', 'matcha', 'croissant', 'trà sữa', 'bánh', 'menu', 'thực đơn', 'sản phẩm', 'đồ uống', 'người mới', 'món nào'], 'CafeZone nổi bật với cappuccino, latte, espresso, trà sữa matcha và bánh croissant. Nếu bạn mới uống cà phê, latte hoặc cappuccino là lựa chọn dễ thưởng thức nhất.'],
     [['giờ mở cửa', 'mở cửa', 'giờ làm việc', 'thời gian', 'làm việc', 'thứ hai', 'thứ bảy'], 'CafeZone mở cửa Thứ Hai - Thứ Sáu 07:00 - 21:00 và Thứ Bảy - Chủ Nhật 08:00 - 22:30.'],
     [['giỏ hàng', 'đặt hàng', 'mua', 'thanh toán', 'đơn hàng', 'giao hàng', 'checkout'], 'Khách hàng có thể xem sản phẩm, thêm vào giỏ hàng, thanh toán và theo dõi đơn hàng trực tuyến.'],

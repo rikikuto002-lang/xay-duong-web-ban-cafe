@@ -61,6 +61,32 @@
     return shortReply || cleaned;
   }
 
+  function getClientFallbackAnswer(question: string): string {
+    const q = question.toLowerCase();
+
+    if (/(xin chào|chào|hello|hi|hey|alo)/i.test(q)) {
+      return 'Xin chào! Tôi là trợ lý AI của CafeZone. Tôi có thể hỗ trợ bạn xem thực đơn, gợi ý đồ uống cho người mới, giờ mở cửa, địa chỉ hoặc hướng dẫn đặt bàn!';
+    }
+
+    if (/(món nào|thực đơn|menu|người mới|đồ uống|gợi ý|món ngon|uống gì|cà phê nào)/i.test(q)) {
+      return 'CafeZone nổi bật với cappuccino, latte, espresso, trà sữa matcha và bánh croissant. Nếu bạn mới uống cà phê, latte hoặc cappuccino là lựa chọn thơm dịu, dễ thưởng thức nhất!';
+    }
+
+    if (/(giờ mở cửa|mở cửa|giờ làm việc|thời gian mở)/i.test(q)) {
+      return 'CafeZone mở cửa Thứ Hai - Thứ Sáu từ 07:00 - 21:00 và Thứ Bảy - Chủ Nhật từ 08:00 - 22:30.';
+    }
+
+    if (/(địa chỉ|quán ở đâu|vị trí|ở đâu|chỗ nào)/i.test(q)) {
+      return 'CafeZone nằm tại địa chỉ 45 Nguyễn Huệ, Quận 1, TP.HCM.';
+    }
+
+    if (/(đặt bàn|đặt chỗ|bàn|reservation)/i.test(q)) {
+      return 'Để đặt bàn, bạn có thể bấm nút "Đặt bàn trải nghiệm" ngay trên trang web hoặc gọi hotline +84 28 555 7788 để quán giữ chỗ tốt nhất nhé!';
+    }
+
+    return 'CafeZone luôn sẵn sàng phục vụ! Bạn có thể hỏi về thực đơn món ngon, gợi ý đồ uống, giờ mở cửa, địa chỉ hoặc cách đặt bàn nhé.';
+  }
+
   async function handleQuickQuestion(question: string) {
     if (chatLoading || !question.trim()) return;
     chatInput = question.trim();
@@ -82,12 +108,23 @@
         body: JSON.stringify({ message: trimmed })
       });
 
-      const data = await response.json();
-      const rawAnswer = data?.answer ?? data?.reply ?? data?.response ?? (typeof data?.message === 'string' && !response.ok ? data.message : '');
-      const answer = friendlyReply(rawAnswer || 'Tôi chưa có câu trả lời rõ ràng cho yêu cầu này. Vui lòng thử lại hoặc hỏi theo cách khác.');
-      chatMessages = [...chatMessages, { role: 'bot', text: answer }];
+      if (response.ok) {
+        const data = await response.json();
+        const rawAnswer = data?.answer ?? data?.reply ?? data?.response ?? (typeof data?.message === 'string' ? data.message : '');
+        if (rawAnswer && typeof rawAnswer === 'string' && rawAnswer.trim()) {
+          const answer = friendlyReply(rawAnswer);
+          chatMessages = [...chatMessages, { role: 'bot', text: answer }];
+          return;
+        }
+      }
+
+      // Backend returned 404/500/no answer -> use smart client fallback
+      const fallback = getClientFallbackAnswer(trimmed);
+      chatMessages = [...chatMessages, { role: 'bot', text: fallback }];
     } catch {
-      chatMessages = [...chatMessages, { role: 'bot', text: 'Tôi đang gặp lỗi kết nối. Vui lòng thử lại sau vài giây.' }];
+      // Network failure -> use smart client fallback
+      const fallback = getClientFallbackAnswer(trimmed);
+      chatMessages = [...chatMessages, { role: 'bot', text: fallback }];
     } finally {
       chatLoading = false;
     }

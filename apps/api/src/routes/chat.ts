@@ -44,6 +44,11 @@ function extractAiText(value: unknown): string {
 function buildSpecificFallback(question: string): string {
   const normalized = question.toLowerCase();
 
+  if (normalized.includes('chào') || normalized.includes('hello') || normalized.includes('hi') || normalized.includes('alo')) {
+    return 'Xin chào! Tôi là trợ lý AI của CafeZone. Tôi có thể hỗ trợ bạn xem thực đơn, gợi ý đồ uống, đặt bàn hoặc giờ mở cửa của quán.';
+  }
+
+  
   if (normalized.includes('đặt bàn') || normalized.includes('đặt chỗ')) {
     return 'Để đặt bàn, bạn có thể đặt trực tuyến trên website hoặc gọi hotline +84 28 555 7788 để xác nhận thời gian và số lượng khách.';
   }
