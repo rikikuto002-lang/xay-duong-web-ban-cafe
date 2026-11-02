@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import JSZip from 'jszip';
 
-const FALLBACK_KNOWLEDGE = `
+export const FALLBACK_KNOWLEDGE = `
 CafeZone là cửa hàng cà phê với không gian ấm áp, hương vị thủ công và thực đơn phong phú.
 Các món nổi bật gồm cappuccino, latte, espresso, trà sữa matcha, bánh croissant, bánh mì nóng và các món ăn nhẹ.
 Nếu khách mới uống cà phê, nên thử cappuccino hoặc latte vì hương vị cân bằng, dễ uống và phù hợp với nhiều người.
@@ -269,6 +269,12 @@ async function extractZipJsonlText(filePath: string): Promise<string | null> {
 }
 
 export async function loadKnowledgeBase(): Promise<string> {
+  const isNodeRuntime = typeof process !== 'undefined' && typeof process.cwd === 'function' && typeof process.cwd() === 'string';
+
+  if (!isNodeRuntime) {
+    return FALLBACK_KNOWLEDGE;
+  }
+
   const candidates = resolveKnownPaths();
   const knowledgeParts: string[] = [];
 

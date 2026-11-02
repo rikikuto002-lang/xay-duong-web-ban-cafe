@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
-import { buildAnswerFromKnowledge, buildScenarioPrompt, detectChatIntent, loadKnowledgeBase } from '../lib/chatKnowledge.js';
+import { getDatabase } from '../lib/database.js';
+import { buildAnswerFromKnowledge, buildScenarioPrompt, detectChatIntent, FALLBACK_KNOWLEDGE, loadKnowledgeBase } from '../lib/chatKnowledge.js';
 
 const AI_RESPONSE_MODEL = '@cf/meta/llama-3.2-3b-instruct';
 const SAFETY_MODEL = '@cf/meta/llama-guard-3-8b';
@@ -109,7 +110,19 @@ router.post('/', async (c) => {
   }
 
   try {
-    const knowledge = await loadKnowledgeBase();
+    const db = await getDatabase();
+    const [faqItems, menuItems] = await Promise.all([
+      db.listFaqs().catch(() => []),
+      db.listMenuKnowledge().catch(() => [])
+    ]);
+
+    const dbKnowledge = [
+      ...faqItems.map((item) => `FAQ: ${item.question} ${item.answer}`),
+      ...menuItems.map((item) => `Menu: ${item.name}. ${item.description}. Giá: ${item.price.toLocaleString('vi-VN')}đ.`)
+    ].join(' ');
+
+    const filesystemKnowledge = await loadKnowledgeBase();
+    const knowledge = [filesystemKnowledge, dbKnowledge].filter(Boolean).join(' ') || FALLBACK_KNOWLEDGE;
     const intent = detectChatIntent(message);
     const scenarioPrompt = buildScenarioPrompt(intent, message);
     const cloudflareEnv = c.env as { AI?: { run?: (model: string, input: Record<string, unknown>) => Promise<unknown> } } | undefined;
