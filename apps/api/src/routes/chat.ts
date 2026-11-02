@@ -35,6 +35,28 @@ function extractAiText(value: unknown): string {
   return '';
 }
 
+function buildSpecificFallback(question: string): string {
+  const normalized = question.toLowerCase();
+
+  if (normalized.includes('đặt bàn') || normalized.includes('đặt chỗ')) {
+    return 'Để đặt bàn, bạn có thể đặt trực tuyến trên website hoặc gọi hotline +84 28 555 7788 để xác nhận thời gian và số lượng khách.';
+  }
+
+  if (normalized.includes('giờ mở cửa') || normalized.includes('mở cửa') || normalized.includes('giờ làm việc')) {
+    return 'CafeZone mở cửa Thứ Hai - Thứ Sáu từ 07:00 - 21:00 và Thứ Bảy - Chủ Nhật từ 08:00 - 22:30.';
+  }
+
+  if (normalized.includes('địa chỉ') || normalized.includes('quán ở đâu') || normalized.includes('vị trí')) {
+    return 'CafeZone nằm tại 45 Nguyễn Huệ, Quận 1, TP.HCM.';
+  }
+
+  if (normalized.includes('món nào') || normalized.includes('thực đơn') || normalized.includes('menu')) {
+    return 'CafeZone nổi bật với cappuccino, latte, espresso, trà sữa matcha và bánh croissant. Nếu bạn mới uống cà phê, latte hoặc cappuccino là lựa chọn dễ thưởng thức nhất.';
+  }
+
+  return 'Tôi chưa có thông tin rõ ràng cho câu hỏi này. Hãy hỏi về menu, giờ mở cửa, địa chỉ hoặc cách đặt bàn, hoặc gọi hotline +84 28 555 7788 để được hỗ trợ.';
+}
+
 function normalizeFriendlyAnswer(raw: string): string {
   const cleaned = raw
     .replace(/```[\s\S]*?```/g, ' ')
@@ -42,7 +64,7 @@ function normalizeFriendlyAnswer(raw: string): string {
     .replace(/\s+/g, ' ')
     .trim();
 
-  if (!cleaned) return 'CafeZone rất vui được hỗ trợ bạn.';
+  if (!cleaned) return '';
 
   const sentenceParts = cleaned.split(/(?<=[.!?])\s+/).filter(Boolean);
   const shortAnswer = sentenceParts.slice(0, 2).join(' ').trim();
@@ -108,7 +130,7 @@ router.post('/', async (c) => {
           messages: [
             {
               role: 'system',
-              content: 'Bạn là trợ lý AI của quán CafeZone, nói chuyện như một nhân viên quán thân thiện và chuyên nghiệp. Trả lời bằng tiếng Việt, tự nhiên, ngắn gọn, rõ ràng, không quá dài, không dùng markdown lạ. Chỉ trả lời các chủ đề liên quan đến menu, giá, giờ mở cửa, địa chỉ, hotline, đặt bàn, giao hàng, thanh toán, và hoạt động của quán. Nếu không chắc chắn, hãy nói thật rằng bạn chưa có thông tin và đề nghị khách gọi hotline hoặc đến trực tiếp để được hỗ trợ. Không bịa thông tin, không lặp lại nhiều câu dài, và hãy giữ giọng điệu ấm áp, dễ hiểu.'
+              content: 'Bạn là trợ lý AI của quán CafeZone. Nói bằng tiếng Việt, chuyên nghiệp, thân thiện, ngắn gọn và rõ ràng. Chỉ trả lời các chủ đề về menu, giá, giờ mở cửa, địa chỉ, đặt bàn, giao hàng, thanh toán, và hoạt động của quán. Nếu không chắc chắn, nói rõ rằng bạn chưa có thông tin và đề nghị gọi hotline hoặc đặt câu hỏi khác. Không bịa thông tin.'
             },
             {
               role: 'user',
@@ -126,6 +148,10 @@ router.post('/', async (c) => {
       }
     }
 
+    if (!answer) {
+      answer = buildSpecificFallback(message);
+    }
+
     return c.json({
       answer,
       model: AI_RESPONSE_MODEL,
@@ -134,11 +160,11 @@ router.post('/', async (c) => {
       prompt: message
     });
   } catch (error) {
-    const fallback = 'Dựa trên kiến thức của quán CafeZone: cửa hàng phục vụ cà phê thủ công, bánh tươi, đặt bàn trực tuyến, giỏ hàng, đơn hàng và mô hình triển khai Cloudflare.';
+    const fallback = buildSpecificFallback(message);
 
     return c.json({
       answer: fallback,
-      model: '@cf/meta/llama-guard-3-8b',
+      model: AI_RESPONSE_MODEL,
       source: 'fallback',
       safe: true,
       error: error instanceof Error ? error.message : 'unknown-error'

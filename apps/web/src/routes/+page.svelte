@@ -52,7 +52,9 @@
       .replace(/\s+/g, ' ')
       .trim();
 
-    if (!cleaned) return 'CafeZone rất vui được hỗ trợ bạn.';
+    if (!cleaned) {
+      return 'Tôi chưa có thông tin rõ ràng cho câu hỏi này. Hãy thử lại với câu hỏi về menu, giờ mở cửa, địa chỉ hoặc cách đặt bàn.';
+    }
 
     const parts = cleaned.split(/(?<=[.!?])\s+/).filter(Boolean);
     const shortReply = parts.slice(0, 2).join(' ').trim();
@@ -81,7 +83,7 @@
       });
 
       const data = await response.json();
-      const answer = friendlyReply(data?.answer || 'CafeZone rất vui được hỗ trợ bạn. Hãy hỏi về menu, đặt bàn hoặc giờ mở cửa.');
+      const answer = friendlyReply(data?.answer || 'Tôi chưa có câu trả lời rõ ràng cho yêu cầu này. Vui lòng thử lại hoặc hỏi theo cách khác.');
       chatMessages = [...chatMessages, { role: 'bot', text: answer }];
     } catch {
       chatMessages = [...chatMessages, { role: 'bot', text: 'Tôi đang gặp lỗi kết nối. Vui lòng thử lại sau vài giây.' }];
@@ -952,7 +954,7 @@
       <div class="chat-header">
         <div>
           <strong>Cafe AI</strong>
-          <small>@cf/meta/llama-guard-3-8b</small>
+          <small>@cf/meta/llama-3.2-3b-instruct</small>
         </div>
       </div>
 
