@@ -3,6 +3,11 @@ import { buildAnswerFromKnowledge, loadKnowledgeBase } from '../lib/chatKnowledg
 
 const AI_RESPONSE_MODEL = '@cf/meta/llama-3.2-3b-instruct';
 const SAFETY_MODEL = '@cf/meta/llama-guard-3-8b';
+const CHAT_SYSTEM_PROMPT = `Bạn là trợ lý AI của quán cà phê CafeZone.
+Nói chuyện bằng tiếng Việt, thân thiện, rõ ràng và ngắn gọn.
+Không bịa thông tin. Chỉ trả lời dựa trên dữ liệu quán được cung cấp.
+Nếu không chắc chắn, hãy nói rõ và đề nghị khách hỏi về menu, giờ mở cửa, địa chỉ, cách đặt bàn hoặc gọi hotline.
+Trả lời theo phong cách nhân viên quán, tôn trọng khách hàng.`;
 
 function extractAiText(value: unknown): string {
   if (typeof value === 'string') {
@@ -74,9 +79,30 @@ function normalizeFriendlyAnswer(raw: string): string {
 
 const router = new Hono();
 
+function normalizeHistory(history: unknown): Array<{ role: 'user' | 'assistant'; content: string }> {
+  if (!Array.isArray(history)) return [];
+
+  return history
+    .map((entry) => {
+      if (!entry || typeof entry !== 'object') return null;
+      const record = entry as Record<string, unknown>;
+      const role = record.role;
+      const content = typeof record.content === 'string' ? record.content.trim() : '';
+
+      if ((role === 'user' || role === 'assistant') && content) {
+        return { role, content };
+      }
+
+      return null;
+    })
+    .filter((item): item is { role: 'user' | 'assistant'; content: string } => Boolean(item))
+    .slice(-6);
+}
+
 router.post('/', async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const message = typeof body?.message === 'string' ? body.message.trim() : '';
+  const history = normalizeHistory(body?.history);
 
   if (!message) {
     return c.json({ message: 'Vui lòng nhập câu hỏi cho chatbot.' }, 400);
@@ -126,18 +152,19 @@ router.post('/', async (c) => {
     let answer = normalizeFriendlyAnswer(buildAnswerFromKnowledge(message, knowledge));
     if (cloudflareEnv?.AI && typeof cloudflareEnv.AI.run === 'function') {
       try {
-        const modelResponse = await cloudflareEnv.AI.run(AI_RESPONSE_MODEL, {
-          messages: [
-            {
-              role: 'system',
-              content: 'Bạn là trợ lý AI của quán CafeZone. Nói bằng tiếng Việt, chuyên nghiệp, thân thiện, ngắn gọn và rõ ràng. Chỉ trả lời các chủ đề về menu, giá, giờ mở cửa, địa chỉ, đặt bàn, giao hàng, thanh toán, và hoạt động của quán. Nếu không chắc chắn, nói rõ rằng bạn chưa có thông tin và đề nghị gọi hotline hoặc đặt câu hỏi khác. Không bịa thông tin.'
-            },
-            {
-              role: 'user',
-              content: `Dữ liệu tham khảo:\n${knowledge}\n\nCâu hỏi: ${message}`
-            }
-          ]
-        });
+        const messages = [
+          {
+            role: 'system',
+            content: `${CHAT_SYSTEM_PROMPT}\n\nDữ liệu quán:\n${knowledge}`
+          },
+          ...history,
+          {
+            role: 'user',
+            content: message
+          }
+        ];
+
+        const modelResponse = await cloudflareEnv.AI.run(AI_RESPONSE_MODEL, { messages });
 
         const generatedText = normalizeFriendlyAnswer(extractAiText(modelResponse));
         if (generatedText) {

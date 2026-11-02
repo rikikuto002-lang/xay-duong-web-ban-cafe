@@ -1,0 +1,87 @@
+{
+  "shop": {
+    "name": "CafeZone",
+    "tagline": "Artisan Coffee & Bakery",
+    "hours": {
+      "weekday": "Thứ Hai - Thứ Sáu: 07:00 - 21:00",
+      "weekend": "Thứ Bảy - Chủ Nhật: 08:00 - 22:30",
+      "note": "CafeZone phục vụ cả ngày, đặc biệt vào khung giờ buổi sáng và tối."
+    },
+    "address": "45 Nguyễn Huệ, Quận 1, TP. Hồ Chí Minh",
+    "hotline": "+84 28 555 7788",
+    "email": "contact@cafezone.vn",
+    "delivery": "Hỗ trợ giao hàng nội thành trong 30 - 45 phút",
+    "policies": {
+      "reservation": "Khách hàng có thể đặt bàn trực tuyến trên website hoặc gọi điện xác nhận trước khi đến.",
+      "bookingWindow": "Nên đặt chỗ trước ít nhất 30 phút để giữ chỗ phù hợp.",
+      "groupSize": "CafeZone hỗ trợ đặt bàn cho 2 - 20 người, bao gồm cả không gian trong nhà và ngoài trời."
+    }
+  },
+  "menu": {
+    "featured": [
+      {
+        "name": "Cappuccino",
+        "description": "Cà phê espresso với bọt sữa mịn, vị đậm nhưng dễ uống.",
+        "price": "59.000đ"
+      },
+      {
+        "name": "Latte",
+        "description": "Espresso kết hợp sữa tươi, vị nhẹ, phù hợp cho người mới uống cà phê.",
+        "price": "69.000đ"
+      },
+      {
+        "name": "Espresso",
+        "description": "Cà phê đậm, đặc trưng, thích hợp cho khách thích vị mạnh.",
+        "price": "49.000đ"
+      },
+      {
+        "name": "Trà sữa Matcha",
+        "description": "Trà matcha tạo cảm giác tươi mát, thơm nhẹ.",
+        "price": "79.000đ"
+      },
+      {
+        "name": "Croissant",
+        "description": "Bánh sữa giòn xốp, ăn kèm cà phê rất hợp.",
+        "price": "39.000đ"
+      }
+    ],
+    "recommendedForNewCustomer": [
+      "Cappuccino",
+      "Latte",
+      "Espresso"
+    ],
+    "categories": [
+      "Cà phê rang xay",
+      "Cà phê máy",
+      "Trà sữa",
+      "Bánh ngọt",
+      "Combo"
+    ]
+  },
+  "faq": [
+    {
+      "question": "Giờ mở cửa của quán là mấy giờ?",
+      "answer": "CafeZone mở cửa Thứ Hai - Thứ Sáu từ 07:00 đến 21:00 và Thứ Bảy - Chủ Nhật từ 08:00 đến 22:30."
+    },
+    {
+      "question": "CafeZone ở đâu?",
+      "answer": "CafeZone nằm tại 45 Nguyễn Huệ, Quận 1, TP. Hồ Chí Minh."
+    },
+    {
+      "question": "Làm sao để đặt bàn?",
+      "answer": "Bạn có thể đặt bàn trực tuyến trên website hoặc gọi hotline +84 28 555 7788 để xác nhận thời gian, số lượng khách và khu vực muốn ngồi."
+    },
+    {
+      "question": "Món nào phù hợp cho người mới?",
+      "answer": "Nếu bạn mới uống cà phê, nên thử cappuccino hoặc latte vì vị dễ uống, cân bằng và phù hợp với nhiều người."
+    },
+    {
+      "question": "Có giao hàng không?",
+      "answer": "CafeZone hỗ trợ giao hàng nội thành trong 30 - 45 phút tùy tuyến đường và thời điểm."
+    },
+    {
+      "question": "Thanh toán như thế nào?",
+      "answer": "Quán hỗ trợ thanh toán trực tiếp, chuyển khoản và các hình thức thanh toán được hỗ trợ trên website."
+    }
+  ]
+}

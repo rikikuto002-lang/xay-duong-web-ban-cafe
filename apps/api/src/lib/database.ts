@@ -72,6 +72,25 @@ export interface DbReview {
   createdAt: string;
 }
 
+export interface DbFaqItem {
+  id: string;
+  question: string;
+  answer: string;
+  category: 'general' | 'reservation' | 'menu' | 'hours';
+  createdAt: string;
+}
+
+export interface DbMenuKnowledgeItem {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  price: number;
+  isFeatured: boolean;
+  active: boolean;
+  createdAt: string;
+}
+
 export interface DbCoupon {
   code: string;
   type: 'percent' | 'fixed';
@@ -163,6 +182,11 @@ export interface DatabaseAdapter {
 
   listReviews(productId?: number): Promise<DbReview[]>;
   createReview(input: Omit<DbReview, 'id' | 'createdAt'>): Promise<DbReview>;
+
+  listFaqs(): Promise<DbFaqItem[]>;
+  createFaq(input: Omit<DbFaqItem, 'id' | 'createdAt'>): Promise<DbFaqItem>;
+  listMenuKnowledge(): Promise<DbMenuKnowledgeItem[]>;
+  createMenuKnowledge(input: Omit<DbMenuKnowledgeItem, 'id' | 'createdAt'>): Promise<DbMenuKnowledgeItem>;
 
   listCoupons(): Promise<DbCoupon[]>;
   getCoupon(code: string): Promise<DbCoupon | null>;
@@ -435,6 +459,91 @@ class MockDatabaseAdapter implements DatabaseAdapter {
     };
     this.reviews.unshift(review);
     return review;
+  }
+
+  private faq: DbFaqItem[] = [
+    {
+      id: 'FAQ-1',
+      question: 'Giờ mở cửa của quán là mấy giờ?',
+      answer: 'CafeZone mở cửa Thứ Hai - Thứ Sáu từ 07:00 đến 21:00 và Thứ Bảy - Chủ Nhật từ 08:00 đến 22:30.',
+      category: 'hours',
+      createdAt: new Date().toISOString()
+    },
+    {
+      id: 'FAQ-2',
+      question: 'Làm sao để đặt bàn?',
+      answer: 'Bạn có thể đặt bàn trực tuyến trên website hoặc gọi hotline +84 28 555 7788 để xác nhận thời gian, số lượng khách và khu vực muốn ngồi.',
+      category: 'reservation',
+      createdAt: new Date().toISOString()
+    },
+    {
+      id: 'FAQ-3',
+      question: 'Món nào phù hợp cho người mới?',
+      answer: 'Nếu bạn mới uống cà phê, nên thử cappuccino hoặc latte vì vị dễ uống và rất cân bằng.',
+      category: 'menu',
+      createdAt: new Date().toISOString()
+    }
+  ];
+
+  private menuKnowledge: DbMenuKnowledgeItem[] = [
+    {
+      id: 'MENU-1',
+      name: 'Cappuccino',
+      description: 'Espresso với bọt sữa mịn, vị đậm nhưng dễ uống.',
+      category: 'Cà phê máy',
+      price: 59000,
+      isFeatured: true,
+      active: true,
+      createdAt: new Date().toISOString()
+    },
+    {
+      id: 'MENU-2',
+      name: 'Latte',
+      description: 'Espresso kết hợp sữa tươi, vị nhẹ và ngọt dịu.',
+      category: 'Cà phê máy',
+      price: 69000,
+      isFeatured: true,
+      active: true,
+      createdAt: new Date().toISOString()
+    },
+    {
+      id: 'MENU-3',
+      name: 'Croissant',
+      description: 'Bánh sữa giòn xốp, ăn kèm cà phê rất hợp.',
+      category: 'Bánh ngọt',
+      price: 39000,
+      isFeatured: false,
+      active: true,
+      createdAt: new Date().toISOString()
+    }
+  ];
+
+  async listFaqs(): Promise<DbFaqItem[]> {
+    return this.faq;
+  }
+
+  async createFaq(input: Omit<DbFaqItem, 'id' | 'createdAt'>): Promise<DbFaqItem> {
+    const item: DbFaqItem = {
+      id: `FAQ-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      createdAt: new Date().toISOString(),
+      ...input
+    };
+    this.faq.unshift(item);
+    return item;
+  }
+
+  async listMenuKnowledge(): Promise<DbMenuKnowledgeItem[]> {
+    return this.menuKnowledge.filter(item => item.active);
+  }
+
+  async createMenuKnowledge(input: Omit<DbMenuKnowledgeItem, 'id' | 'createdAt'>): Promise<DbMenuKnowledgeItem> {
+    const item: DbMenuKnowledgeItem = {
+      id: `MENU-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      createdAt: new Date().toISOString(),
+      ...input
+    };
+    this.menuKnowledge.unshift(item);
+    return item;
   }
 
   // Coupons
@@ -716,6 +825,18 @@ class D1DatabaseAdapter implements DatabaseAdapter {
   }
   async createReview(input: Omit<DbReview, 'id' | 'createdAt'>): Promise<DbReview> {
     return { id: `REV-${Date.now()}`, createdAt: new Date().toISOString(), ...input };
+  }
+  async listFaqs(): Promise<DbFaqItem[]> {
+    return [];
+  }
+  async createFaq(input: Omit<DbFaqItem, 'id' | 'createdAt'>): Promise<DbFaqItem> {
+    return { id: `FAQ-${Date.now()}`, createdAt: new Date().toISOString(), ...input };
+  }
+  async listMenuKnowledge(): Promise<DbMenuKnowledgeItem[]> {
+    return [];
+  }
+  async createMenuKnowledge(input: Omit<DbMenuKnowledgeItem, 'id' | 'createdAt'>): Promise<DbMenuKnowledgeItem> {
+    return { id: `MENU-${Date.now()}`, createdAt: new Date().toISOString(), ...input };
   }
   async listCoupons(): Promise<DbCoupon[]> {
     return [];

@@ -24,8 +24,12 @@ const KNOWN_DOC_NAMES = [
 const KNOWN_JSONL_NAMES = [
   'chatbot-data/eval.jsonl',
   'chatbot-data/eval.json',
+  'chatbot-data/cafe-knowledge.json',
+  'chatbot-data/faq-menu.json',
   'eval.jsonl',
   'eval.json',
+  'cafe-knowledge.json',
+  'faq-menu.json',
   'chatbot-data.jsonl',
   'chatbot-data.json'
 ];
@@ -187,6 +191,45 @@ async function extractJsonlText(filePath: string): Promise<string | null> {
   }
 }
 
+function extractObjectText(value: unknown, output: string[] = []): string[] {
+  if (typeof value === 'string') {
+    const cleaned = normalizeKnowledgeText(value);
+    if (cleaned) output.push(cleaned);
+    return output;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      extractObjectText(item, output);
+    }
+    return output;
+  }
+
+  if (value && typeof value === 'object') {
+    for (const [key, nestedValue] of Object.entries(value as Record<string, unknown>)) {
+      const normalizedKey = key.toLowerCase();
+      if (['id', 'slug', 'image', 'url', 'icon', 'src', 'alt'].includes(normalizedKey)) {
+        continue;
+      }
+      extractObjectText(nestedValue, output);
+    }
+  }
+
+  return output;
+}
+
+async function extractJsonKnowledgeText(filePath: string): Promise<string | null> {
+  try {
+    const content = fs.readFileSync(filePath, 'utf8');
+    const parsed = JSON.parse(content) as unknown;
+    const values = extractObjectText(parsed);
+    const text = values.join(' ');
+    return text.length > 0 ? text : null;
+  } catch {
+    return null;
+  }
+}
+
 async function extractZipJsonlText(filePath: string): Promise<string | null> {
   try {
     const buffer = fs.readFileSync(filePath);
@@ -232,8 +275,16 @@ export async function loadKnowledgeBase(): Promise<string> {
   for (const candidate of candidates) {
     if (!fs.existsSync(candidate)) continue;
 
-    if (candidate.endsWith('.jsonl') || candidate.endsWith('.json')) {
+    if (candidate.endsWith('.jsonl')) {
       const text = await extractJsonlText(candidate);
+      if (text && text.length > 0) {
+        knowledgeParts.push(text);
+      }
+      continue;
+    }
+
+    if (candidate.endsWith('.json')) {
+      const text = await extractJsonKnowledgeText(candidate);
       if (text && text.length > 0) {
         knowledgeParts.push(text);
       }
