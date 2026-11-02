@@ -13,6 +13,7 @@ import reservationsRouter from './routes/reservations.js';
 import couponsRouter from './routes/coupons.js';
 import shippingRouter from './routes/shipping.js';
 import reviewsRouter from './routes/reviews.js';
+import chatRouter from './routes/chat.js';
 import { requestLogger, errorHandler } from './middleware/errorHandler.js';
 import { logger } from './lib/logger.js';
 
@@ -55,6 +56,7 @@ app.route('/api/reservations', reservationsRouter);
 app.route('/api/coupons', couponsRouter);
 app.route('/api/shipping', shippingRouter);
 app.route('/api/reviews', reviewsRouter);
+app.route('/api/chat', chatRouter);
 
 app.onError(errorHandler);
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { afterUpdate, onMount } from 'svelte';
   import { getCartStorageKey, notifyCartUpdated } from '$lib/auth';
   import { categories as defaultCategories, type Product } from '$lib/mockData';
 
@@ -9,7 +9,7 @@
   const routeState = { data, params };
   void routeState;
 
-  const API_URL = import.meta.env.PUBLIC_API_URL || 'https://ban-cafe-api.rikikuto002.workers.dev';
+  const API_URL = import.meta.env.PUBLIC_API_URL || (import.meta.env.DEV ? 'http://localhost:4000' : 'https://ban-cafe-api.rikikuto002.workers.dev');
 
   let selectedCategory = 'Tất cả';
   let searchQuery = '';
@@ -17,6 +17,78 @@
   let products: Product[] = [];
   let categoryList: string[] = ['Tất cả'];
   let loadingProducts = true;
+
+  type ChatMessage = { role: 'user' | 'bot'; text: string };
+  const quickQuestions = [
+    'Giờ mở cửa?',
+    'Món nào phù hợp cho người mới?',
+    'Làm sao để đặt bàn?',
+    'Quán ở đâu?'
+  ];
+
+  let chatOpen = true;
+  let chatInput = '';
+  let chatLoading = false;
+  let chatBody: HTMLDivElement | undefined;
+  let chatMessages: ChatMessage[] = [
+    { role: 'bot', text: 'Xin chào! Tôi là trợ lý AI của CafeZone. Bạn có thể hỏi về menu, đặt bàn, địa chỉ hoặc giờ mở cửa.' }
+  ];
+
+  function scrollChatToBottom() {
+    if (!chatBody) return;
+    requestAnimationFrame(() => {
+      chatBody!.scrollTop = chatBody!.scrollHeight;
+    });
+  }
+
+  afterUpdate(() => {
+    scrollChatToBottom();
+  });
+
+  function friendlyReply(raw: string) {
+    const cleaned = String(raw || '')
+      .replace(/```[\s\S]*?```/g, ' ')
+      .replace(/[*_#>`]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!cleaned) return 'CafeZone rất vui được hỗ trợ bạn.';
+
+    const parts = cleaned.split(/(?<=[.!?])\s+/).filter(Boolean);
+    const shortReply = parts.slice(0, 2).join(' ').trim();
+    return shortReply || cleaned;
+  }
+
+  async function handleQuickQuestion(question: string) {
+    if (chatLoading || !question.trim()) return;
+    chatInput = question.trim();
+    await sendChatMessage();
+  }
+
+  async function sendChatMessage() {
+    const trimmed = chatInput.trim();
+    if (!trimmed || chatLoading) return;
+
+    chatMessages = [...chatMessages, { role: 'user', text: trimmed }];
+    chatInput = '';
+    chatLoading = true;
+
+    try {
+      const response = await fetch(`${API_URL}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: trimmed })
+      });
+
+      const data = await response.json();
+      const answer = friendlyReply(data?.answer || 'CafeZone rất vui được hỗ trợ bạn. Hãy hỏi về menu, đặt bàn hoặc giờ mở cửa.');
+      chatMessages = [...chatMessages, { role: 'bot', text: answer }];
+    } catch {
+      chatMessages = [...chatMessages, { role: 'bot', text: 'Tôi đang gặp lỗi kết nối. Vui lòng thử lại sau vài giây.' }];
+    } finally {
+      chatLoading = false;
+    }
+  }
 
   // Product detail modal state
   let activeDetailProduct: Product | null = null;
@@ -868,6 +940,59 @@
       <p>Hỗ trợ giao hàng nội thành trong 30-45 phút</p>
     </div>
   </footer>
+</div>
+
+<div class="chat-widget">
+  <button class="chat-toggle" on:click={() => (chatOpen = !chatOpen)} aria-label="Mở chatbot AI">
+    {chatOpen ? '✕' : '💬'}
+  </button>
+
+  {#if chatOpen}
+    <div class="chat-panel" role="dialog" aria-label="Chatbox trợ lý AI">
+      <div class="chat-header">
+        <div>
+          <strong>Cafe AI</strong>
+          <small>@cf/meta/llama-guard-3-8b</small>
+        </div>
+      </div>
+
+      <div class="chat-body" bind:this={chatBody}>
+        {#each chatMessages as message}
+          <div class={`chat-bubble ${message.role}`}>
+            {message.text}
+          </div>
+        {/each}
+        {#if chatLoading}
+          <div class="chat-bubble bot typing">Đang suy nghĩ...</div>
+        {/if}
+      </div>
+
+      <div class="chat-suggestions">
+        {#each quickQuestions as question}
+          <button type="button" class="quick-question" on:click={() => handleQuickQuestion(question)}>
+            {question}
+          </button>
+        {/each}
+      </div>
+
+      <div class="chat-input-row">
+        <input
+          bind:value={chatInput}
+          type="text"
+          placeholder="Hỏi về menu, đặt bàn..."
+          aria-label="Nhập câu hỏi cho chatbot"
+          on:keydown={(event) => {
+            if (event.key === 'Enter') {
+              sendChatMessage();
+            }
+          }}
+        />
+        <button type="button" on:click={sendChatMessage} disabled={chatLoading || !chatInput.trim()}>
+          Gửi
+        </button>
+      </div>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -2034,6 +2159,166 @@
     color: var(--cafe-primary);
     font-size: 15px;
     font-weight: 700;
+  }
+
+  .chat-widget {
+    position: fixed;
+    right: 18px;
+    bottom: 18px;
+    z-index: 2200;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 10px;
+  }
+
+  .chat-toggle {
+    width: 52px;
+    height: 52px;
+    border: none;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #5c3b2b, #3d2314);
+    color: white;
+    font-size: 24px;
+    cursor: pointer;
+    box-shadow: 0 12px 22px rgba(61, 35, 20, 0.2);
+  }
+
+  .chat-panel {
+    width: min(360px, calc(100vw - 28px));
+    background: #f5f3f0;
+    border: 1px solid rgba(89, 62, 47, 0.16);
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 14px 26px rgba(53, 33, 22, 0.12);
+  }
+
+  .chat-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 16px 12px;
+    background: rgba(255, 255, 255, 0.5);
+    border-bottom: 1px solid rgba(90, 63, 46, 0.15);
+  }
+
+  .chat-header strong {
+    display: block;
+    color: #2a1f1a;
+    font-size: 20px;
+    font-weight: 700;
+    line-height: 1.2;
+  }
+
+  .chat-header small {
+    color: rgba(42, 31, 26, 0.82);
+    font-size: 12px;
+    display: block;
+    margin-top: 2px;
+  }
+
+  .chat-body {
+    max-height: 310px;
+    overflow-y: auto;
+    padding: 18px 14px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .chat-suggestions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 0 12px 10px;
+  }
+
+  .quick-question {
+    border: 1px solid rgba(90, 63, 46, 0.18);
+    background: #efe5dd;
+    color: #3d2a20;
+    border-radius: 999px;
+    padding: 7px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .quick-question:hover {
+    background: #e5d7cb;
+  }
+
+  .chat-bubble {
+    max-width: 88%;
+    padding: 10px 14px;
+    border-radius: 18px;
+    line-height: 1.5;
+    font-size: 15px;
+    word-break: break-word;
+    box-shadow: inset 0 0 0 1px rgba(80, 58, 46, 0.03);
+  }
+
+  .chat-bubble.user {
+    align-self: flex-end;
+    background: #4d3123;
+    color: white;
+    border-bottom-right-radius: 6px;
+    font-weight: 600;
+  }
+
+  .chat-bubble.bot {
+    align-self: flex-start;
+    background: #ede5df;
+    color: #2d201a;
+    border-bottom-left-radius: 6px;
+  }
+
+  .chat-bubble.typing {
+    opacity: 0.8;
+    font-style: italic;
+  }
+
+  .chat-input-row {
+    display: flex;
+    gap: 8px;
+    padding: 12px;
+    border-top: 1px solid rgba(90, 63, 46, 0.16);
+    background: rgba(255, 255, 255, 0.32);
+  }
+
+  .chat-input-row input {
+    flex: 1;
+    min-width: 0;
+    border: 1px solid rgba(90, 63, 46, 0.22);
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 15px;
+    outline: none;
+    background: rgba(255, 255, 255, 0.7);
+    color: #2d201a;
+  }
+
+  .chat-input-row input::placeholder {
+    color: #7a675f;
+  }
+
+  .chat-input-row button {
+    background: #5a3d2d;
+    color: white;
+    border: none;
+    border-radius: 10px;
+    padding: 10px 18px;
+    font-weight: 700;
+    font-size: 15px;
+    cursor: pointer;
+    min-width: 64px;
+  }
+
+  .chat-input-row button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   /* Mobile responsiveness */

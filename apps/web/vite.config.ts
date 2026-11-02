@@ -1,7 +1,7 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 
-const API_BACKEND = process.env.PUBLIC_API_URL || 'https://ban-cafe-api.rikikuto002.workers.dev';
+const API_BACKEND = process.env.PUBLIC_API_URL || 'http://localhost:4000';
 
 export default defineConfig({
   plugins: [sveltekit()],

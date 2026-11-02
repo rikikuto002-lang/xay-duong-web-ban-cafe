@@ -9,7 +9,7 @@
   const routeState = { data, params };
   void routeState;
 
-  const API_URL = import.meta.env.PUBLIC_API_URL || 'https://ban-cafe-api.rikikuto002.workers.dev';
+  const API_URL = import.meta.env.PUBLIC_API_URL || (import.meta.env.DEV ? 'http://localhost:4000' : 'https://ban-cafe-api.rikikuto002.workers.dev');
 
   type CartEntry = {
     id: number;
