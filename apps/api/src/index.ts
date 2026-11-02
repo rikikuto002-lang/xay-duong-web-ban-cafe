@@ -32,6 +32,9 @@ app.use('*', async (c, next) => {
     if (envBindings.PRODUCT_IMAGES) {
       (globalThis as Record<string, unknown>).PRODUCT_IMAGES = envBindings.PRODUCT_IMAGES;
     }
+    if (envBindings.VECTORIZE_INDEX) {
+      (globalThis as Record<string, unknown>).VECTORIZE_INDEX = envBindings.VECTORIZE_INDEX;
+    }
   }
   await next();
 });

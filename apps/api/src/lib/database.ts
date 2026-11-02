@@ -894,6 +894,8 @@ export async function getDatabase(): Promise<DatabaseAdapter> {
     });
   }
 
+  console.warn('[cloudflare] D1 binding missing. Falling back to mock data. Create a real D1 database and update wrangler.jsonc with the actual database_id.');
+
   const g = globalThis as { __mockDb?: MockDatabaseAdapter };
   if (!g.__mockDb) {
     g.__mockDb = new MockDatabaseAdapter();
