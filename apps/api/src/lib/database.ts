@@ -827,16 +827,53 @@ class D1DatabaseAdapter implements DatabaseAdapter {
     return { id: `REV-${Date.now()}`, createdAt: new Date().toISOString(), ...input };
   }
   async listFaqs(): Promise<DbFaqItem[]> {
-    return [];
+    const result = await this.db.prepare('SELECT * FROM faq_items ORDER BY created_at DESC').bind().all();
+    return ((result.results ?? []) as Array<Record<string, unknown>>).map((row) => ({
+      id: String(row.id ?? `FAQ-${Date.now()}`),
+      question: String(row.question ?? ''),
+      answer: String(row.answer ?? ''),
+      category: (String(row.category ?? 'general') as DbFaqItem['category']),
+      createdAt: String(row.created_at ?? new Date().toISOString())
+    }));
   }
   async createFaq(input: Omit<DbFaqItem, 'id' | 'createdAt'>): Promise<DbFaqItem> {
-    return { id: `FAQ-${Date.now()}`, createdAt: new Date().toISOString(), ...input };
+    const faqItem = {
+      id: `FAQ-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      createdAt: new Date().toISOString(),
+      ...input
+    };
+
+    await this.db.prepare('INSERT INTO faq_items (id, question, answer, category, created_at) VALUES (?, ?, ?, ?, ?)')
+      .bind(faqItem.id, faqItem.question, faqItem.answer, faqItem.category, faqItem.createdAt)
+      .all();
+
+    return faqItem;
   }
   async listMenuKnowledge(): Promise<DbMenuKnowledgeItem[]> {
-    return [];
+    const result = await this.db.prepare('SELECT * FROM menu_knowledge WHERE active = 1 ORDER BY created_at DESC').bind().all();
+    return ((result.results ?? []) as Array<Record<string, unknown>>).map((row) => ({
+      id: String(row.id ?? `MENU-${Date.now()}`),
+      name: String(row.name ?? ''),
+      description: String(row.description ?? ''),
+      category: String(row.category ?? ''),
+      price: Number(row.price ?? 0),
+      isFeatured: Boolean(row.is_featured ?? row.isFeatured ?? false),
+      active: Boolean(row.active ?? true),
+      createdAt: String(row.created_at ?? new Date().toISOString())
+    }));
   }
   async createMenuKnowledge(input: Omit<DbMenuKnowledgeItem, 'id' | 'createdAt'>): Promise<DbMenuKnowledgeItem> {
-    return { id: `MENU-${Date.now()}`, createdAt: new Date().toISOString(), ...input };
+    const item = {
+      id: `MENU-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      createdAt: new Date().toISOString(),
+      ...input
+    };
+
+    await this.db.prepare('INSERT INTO menu_knowledge (id, name, description, category, price, is_featured, active, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(item.id, item.name, item.description, item.category, item.price, item.isFeatured ? 1 : 0, item.active ? 1 : 0, item.createdAt)
+      .all();
+
+    return item;
   }
   async listCoupons(): Promise<DbCoupon[]> {
     return [];

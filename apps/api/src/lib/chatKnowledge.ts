@@ -331,6 +331,44 @@ export async function loadKnowledgeBase(): Promise<string> {
   return FALLBACK_KNOWLEDGE;
 }
 
+export type ChatIntent = 'reservation' | 'menu' | 'hours' | 'general';
+
+export function detectChatIntent(question: string): ChatIntent {
+  const q = question.toLowerCase();
+
+  if (/(đặt bàn|đặt chỗ|reservation|book table|reserve|đặt chỗ tối nay)/.test(q)) {
+    return 'reservation';
+  }
+
+  if (/(món nào|thực đơn|menu|sản phẩm|bạn có thể gợi ý|món ngon|cà phê nào)/.test(q)) {
+    return 'menu';
+  }
+
+  if (/(giờ mở cửa|mở cửa|giờ làm việc|thời gian làm việc|thứ hai|thứ bảy|làm việc)/.test(q)) {
+    return 'hours';
+  }
+
+  return 'general';
+}
+
+export function buildScenarioPrompt(intent: ChatIntent, question: string): string {
+  const normalizedQuestion = question.trim();
+
+  if (intent === 'reservation') {
+    return 'Bạn đang xử lý tình huống KHÁCH HÀNG MUỐN ĐẶT BÀN. Hãy trả lời ngắn gọn, hướng dẫn rõ 2 cách: đặt trực tuyến hoặc gọi hotline, nêu rõ cần có thời gian, số lượng khách, khu vực muốn ngồi.';
+  }
+
+  if (intent === 'menu') {
+    return 'Bạn đang xử lý tình huống KHÁCH HÀNG HỎI THỰC ĐƠN. Hãy gợi ý món theo thực đơn của quán, ưu tiên cappuccino, latte, espresso, trà sữa matcha và bánh croissant. Tránh nói mơ hồ, hãy đưa gợi ý phù hợp cho người mới và kèm nhắc về giá ước lượng nếu cần.';
+  }
+
+  if (intent === 'hours') {
+    return 'Bạn đang xử lý tình huống KHÁCH HÀNG HỎI GIỜ MỞ CỬA. Hãy trả lời chính xác: Thứ Hai - Thứ Sáu 07:00 - 21:00, Thứ Bảy - Chủ Nhật 08:00 - 22:30. Nói rõ quán mở cửa theo lịch và không lẫn lộn với thời gian đặt hàng.';
+  }
+
+  return `Bạn là trợ lý quán cà phê CafeZone. Hãy trả lời câu hỏi khách hàng sau bằng tiếng Việt, rõ ràng, thân thiện và ngắn gọn. Câu hỏi: ${normalizedQuestion}`;
+}
+
 export function buildAnswerFromKnowledge(question: string, knowledge: string) {
   const q = question.toLowerCase();
   const lines = knowledge
@@ -370,5 +408,5 @@ export function buildAnswerFromKnowledge(question: string, knowledge: string) {
     return directMatches.slice(0, 3).join(' ');
   }
 
-  return 'CafeZone tập trung vào cà phê thủ công, không gian ấm áp, đặt hàng trực tuyến và quản lý thương hiệu theo mô hình hiện đại. Dữ liệu hỗ trợ dựa trên kiến thức dự án và file DOCX liên quan.';
+  return 'CafeZone tập trung vào cà phê thủ công, không gian ấm áp, đặt hàng trực tuyến và quản lý thương hiệu theo mô hình hiện đại. Dữ liệu hỗ trợ dựa trên kiến thức dự án liên quan.';
 }

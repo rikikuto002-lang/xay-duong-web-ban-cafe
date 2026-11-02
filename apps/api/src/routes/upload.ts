@@ -31,6 +31,20 @@ router.post('/', authMiddleware, requireRole('admin'), async (c) => {
     const cleanBase = fileName ? path.basename(String(fileName), path.extname(String(fileName))) : 'img';
     const targetFileName = `${cleanBase.replace(/[^a-zA-Z0-9_-]/g, '')}-${Date.now()}.${ext}`;
 
+    const r2Bucket = (c.env as Record<string, unknown> | undefined)?.PRODUCT_IMAGES as
+      | { put?: (key: string, value: Buffer | ArrayBuffer | ArrayBufferView | Blob | string) => Promise<unknown> }
+      | undefined;
+
+    if (r2Bucket && typeof r2Bucket.put === 'function') {
+      await r2Bucket.put(targetFileName, buffer);
+      return c.json({
+        message: 'Tải ảnh lên Cloudflare R2 thành công',
+        url: `https://pub-${targetFileName}.r2.dev/${targetFileName}`,
+        fileName: targetFileName,
+        storage: 'r2'
+      }, 201);
+    }
+
     const candidates = [
       path.resolve(process.cwd(), 'apps/web/static/uploads'),
       path.resolve(process.cwd(), '../web/static/uploads'),
@@ -49,7 +63,8 @@ router.post('/', authMiddleware, requireRole('admin'), async (c) => {
     return c.json({
       message: 'Tải ảnh lên thành công',
       url: publicUrl,
-      fileName: targetFileName
+      fileName: targetFileName,
+      storage: 'local'
     }, 201);
   } catch (error: any) {
     return c.json({ message: 'Lỗi tải ảnh lên: ' + error.message }, 500);

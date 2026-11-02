@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { buildAnswerFromKnowledge, loadKnowledgeBase } from '../lib/chatKnowledge.js';
+import { buildAnswerFromKnowledge, buildScenarioPrompt, detectChatIntent, loadKnowledgeBase } from '../lib/chatKnowledge.js';
 
 const AI_RESPONSE_MODEL = '@cf/meta/llama-3.2-3b-instruct';
 const SAFETY_MODEL = '@cf/meta/llama-guard-3-8b';
@@ -110,6 +110,8 @@ router.post('/', async (c) => {
 
   try {
     const knowledge = await loadKnowledgeBase();
+    const intent = detectChatIntent(message);
+    const scenarioPrompt = buildScenarioPrompt(intent, message);
     const cloudflareEnv = c.env as { AI?: { run?: (model: string, input: Record<string, unknown>) => Promise<unknown> } } | undefined;
 
     let safetyCheck: { safe: boolean; reason: string } = { safe: true, reason: 'ok' };
@@ -155,7 +157,7 @@ router.post('/', async (c) => {
         const messages = [
           {
             role: 'system',
-            content: `${CHAT_SYSTEM_PROMPT}\n\nDữ liệu quán:\n${knowledge}`
+            content: `${CHAT_SYSTEM_PROMPT}\n\nTình huống khách hàng: ${scenarioPrompt}\n\nDữ liệu quán:\n${knowledge}`
           },
           ...history,
           {
