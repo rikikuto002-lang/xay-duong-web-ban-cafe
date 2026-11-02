@@ -83,7 +83,8 @@
       });
 
       const data = await response.json();
-      const answer = friendlyReply(data?.answer || 'Tôi chưa có câu trả lời rõ ràng cho yêu cầu này. Vui lòng thử lại hoặc hỏi theo cách khác.');
+      const rawAnswer = data?.answer ?? data?.reply ?? data?.response ?? (typeof data?.message === 'string' && !response.ok ? data.message : '');
+      const answer = friendlyReply(rawAnswer || 'Tôi chưa có câu trả lời rõ ràng cho yêu cầu này. Vui lòng thử lại hoặc hỏi theo cách khác.');
       chatMessages = [...chatMessages, { role: 'bot', text: answer }];
     } catch {
       chatMessages = [...chatMessages, { role: 'bot', text: 'Tôi đang gặp lỗi kết nối. Vui lòng thử lại sau vài giây.' }];

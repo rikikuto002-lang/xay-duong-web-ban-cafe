@@ -102,7 +102,8 @@ function normalizeHistory(history: unknown): Array<{ role: 'user' | 'assistant';
 
 router.post('/', async (c) => {
   const body = await c.req.json().catch(() => ({}));
-  const message = typeof body?.message === 'string' ? body.message.trim() : '';
+  const rawMessage = typeof body?.message === 'string' ? body.message : (typeof body?.prompt === 'string' ? body.prompt : '');
+  const message = rawMessage.trim();
   const history = normalizeHistory(body?.history);
 
   if (!message) {
@@ -110,19 +111,28 @@ router.post('/', async (c) => {
   }
 
   try {
-    const db = await getDatabase();
-    const [faqItems, menuItems] = await Promise.all([
+    const db = await getDatabase(c.env);
+    const [faqItems, menuItems, products] = await Promise.all([
       db.listFaqs().catch(() => []),
-      db.listMenuKnowledge().catch(() => [])
+      db.listMenuKnowledge().catch(() => []),
+      db.listProducts().catch(() => [])
     ]);
 
-    const dbKnowledge = [
-      ...faqItems.map((item) => `FAQ: ${item.question} ${item.answer}`),
-      ...menuItems.map((item) => `Menu: ${item.name}. ${item.description}. Giá: ${item.price.toLocaleString('vi-VN')}đ.`)
-    ].join(' ');
+    const faqKnowledge = faqItems
+      .map((item) => `[FAQ] Câu hỏi: ${item.question} -> Trả lời: ${item.answer}`)
+      .join('\n');
 
-    const filesystemKnowledge = await loadKnowledgeBase();
-    const knowledge = [filesystemKnowledge, dbKnowledge].filter(Boolean).join(' ') || FALLBACK_KNOWLEDGE;
+    const menuKnowledge = menuItems
+      .map((item) => `[Menu] ${item.name}: ${item.description}. Giá: ${item.price.toLocaleString('vi-VN')}đ.`)
+      .join('\n');
+
+    const productKnowledge = products
+      .map((p) => `[Sản phẩm] ${p.name}: ${p.description || ''}. Giá: ${p.price.toLocaleString('vi-VN')}đ.`)
+      .join('\n');
+
+    const dbKnowledge = [faqKnowledge, menuKnowledge, productKnowledge].filter(Boolean).join('\n');
+    const filesystemKnowledge = await loadKnowledgeBase().catch(() => '');
+    const knowledge = [dbKnowledge, filesystemKnowledge].filter(Boolean).join('\n') || FALLBACK_KNOWLEDGE;
     const intent = detectChatIntent(message);
     const scenarioPrompt = buildScenarioPrompt(intent, message);
     const cloudflareEnv = c.env as { AI?: { run?: (model: string, input: Record<string, unknown>) => Promise<unknown> } } | undefined;
@@ -156,21 +166,24 @@ router.post('/', async (c) => {
     }
 
     if (!safetyCheck.safe) {
+      const refusal = 'Tôi chỉ hỗ trợ các câu hỏi liên quan đến quán cà phê, thực đơn, đặt bàn, thanh toán và quản lý cửa hàng.';
       return c.json({
-        answer: 'Tôi chỉ hỗ trợ các câu hỏi liên quan đến quán cà phê, thực đơn, đặt bàn, thanh toán và quản lý cửa hàng.',
+        answer: refusal,
+        reply: refusal,
+        response: refusal,
         model: SAFETY_MODEL,
         source: 'safety-check',
         safe: false
       });
     }
 
-    let answer = normalizeFriendlyAnswer(buildAnswerFromKnowledge(message, knowledge));
+    let answer = normalizeFriendlyAnswer(buildAnswerFromKnowledge(message, knowledge, { faqItems, menuItems, products }));
     if (cloudflareEnv?.AI && typeof cloudflareEnv.AI.run === 'function') {
       try {
         const messages = [
           {
             role: 'system',
-            content: `${CHAT_SYSTEM_PROMPT}\n\nTình huống khách hàng: ${scenarioPrompt}\n\nDữ liệu quán:\n${knowledge}`
+            content: `${CHAT_SYSTEM_PROMPT}\n\nTình huống khách hàng: ${scenarioPrompt}\n\nDữ liệu D1 quán:\n${knowledge}`
           },
           ...history,
           {
@@ -186,7 +199,7 @@ router.post('/', async (c) => {
           answer = generatedText;
         }
       } catch {
-        answer = normalizeFriendlyAnswer(buildAnswerFromKnowledge(message, knowledge));
+        answer = normalizeFriendlyAnswer(buildAnswerFromKnowledge(message, knowledge, { faqItems, menuItems, products }));
       }
     }
 
@@ -196,8 +209,10 @@ router.post('/', async (c) => {
 
     return c.json({
       answer,
+      reply: answer,
+      response: answer,
       model: AI_RESPONSE_MODEL,
-      source: cloudflareEnv?.AI ? 'cloudflare-ai' : 'docx-knowledge',
+      source: cloudflareEnv?.AI ? 'cloudflare-ai' : (dbKnowledge ? 'cloudflare-d1' : 'docx-knowledge'),
       safe: true,
       prompt: message
     });
@@ -206,6 +221,8 @@ router.post('/', async (c) => {
 
     return c.json({
       answer: fallback,
+      reply: fallback,
+      response: fallback,
       model: AI_RESPONSE_MODEL,
       source: 'fallback',
       safe: true,

@@ -562,13 +562,29 @@ class D1DatabaseAdapter implements DatabaseAdapter {
     private readonly db: {
       prepare: (sql: string) => {
         bind: (...args: unknown[]) => { all: () => Promise<{ results?: Record<string, unknown>[] }> };
+        all: () => Promise<{ results?: Record<string, unknown>[] }>;
       };
     }
   ) {}
 
+  private async query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]> {
+    try {
+      const stmt = this.db.prepare(sql);
+      const exec = params.length > 0 ? stmt.bind(...params) : stmt;
+      const res = await exec.all();
+      return (res.results ?? []) as Record<string, unknown>[];
+    } catch (err) {
+      console.warn('[D1DatabaseAdapter query error]', err, 'SQL:', sql);
+      return [];
+    }
+  }
+
   async listCategories(): Promise<DbCategory[]> {
-    const result = await this.db.prepare('SELECT * FROM categories ORDER BY id').bind().all();
-    return (result.results ?? []) as DbCategory[];
+    const rows = await this.query('SELECT * FROM categories ORDER BY id');
+    return rows.map((r) => ({
+      id: Number(r.id) || (typeof r.id === 'string' ? parseInt(r.id.replace(/\D/g, ''), 10) || 1 : 1),
+      name: String(r.name ?? '')
+    }));
   }
 
   async createCategory(input: { name: string }): Promise<DbCategory> {
@@ -594,22 +610,34 @@ class D1DatabaseAdapter implements DatabaseAdapter {
   }
 
   async listProducts(category?: string): Promise<DbProduct[]> {
-    if (category) {
-      const result = await this.db
-        .prepare('SELECT * FROM products WHERE category = ? ORDER BY id')
-        .bind(category)
-        .all();
-      return (result.results ?? []) as DbProduct[];
-    }
+    const rows = category
+      ? await this.query('SELECT * FROM products WHERE category = ? OR category_id = ? ORDER BY id', category, category)
+      : await this.query('SELECT * FROM products ORDER BY id');
 
-    const result = await this.db.prepare('SELECT * FROM products ORDER BY id').bind().all();
-    return (result.results ?? []) as DbProduct[];
+    return rows.map((r) => ({
+      id: Number(r.id) || (typeof r.id === 'string' ? parseInt(r.id.replace(/\D/g, ''), 10) || 1 : 1),
+      name: String(r.name ?? ''),
+      category: String(r.category ?? r.category_id ?? 'Cà phê rang xay'),
+      price: Number(r.price ?? 0),
+      stock: Number(r.stock ?? 0),
+      image: String(r.image ?? r.image_url ?? 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&w=800&q=80'),
+      description: String(r.description ?? '')
+    }));
   }
 
   async getProductById(id: number): Promise<DbProduct | null> {
-    const result = await this.db.prepare('SELECT * FROM products WHERE id = ?').bind(id).all();
-    const rows = (result.results ?? []) as DbProduct[];
-    return rows[0] ?? null;
+    const rows = await this.query('SELECT * FROM products WHERE id = ? OR id = ?', id, `prod_${String(id).padStart(3, '0')}`);
+    const r = rows[0];
+    if (!r) return null;
+    return {
+      id: Number(r.id) || id,
+      name: String(r.name ?? ''),
+      category: String(r.category ?? r.category_id ?? 'Cà phê rang xay'),
+      price: Number(r.price ?? 0),
+      stock: Number(r.stock ?? 0),
+      image: String(r.image ?? r.image_url ?? ''),
+      description: String(r.description ?? '')
+    };
   }
 
   async createProduct(input: Partial<DbProduct>): Promise<DbProduct> {
@@ -660,16 +688,14 @@ class D1DatabaseAdapter implements DatabaseAdapter {
   }
 
   async listOrders(userEmail?: string): Promise<DbOrder[]> {
-    const rowsResult = await this.db
-      .prepare(userEmail ? 'SELECT * FROM orders WHERE user_email = ? ORDER BY created_at DESC' : 'SELECT * FROM orders ORDER BY created_at DESC')
-      .bind(userEmail ?? undefined)
-      .all();
+    const rows = userEmail
+      ? await this.query('SELECT * FROM orders WHERE user_email = ? ORDER BY created_at DESC', userEmail)
+      : await this.query('SELECT * FROM orders ORDER BY created_at DESC');
 
-    const rows = (rowsResult.results ?? []) as Array<Record<string, unknown>>;
     const orders = await Promise.all(
       rows.map(async (row) => {
-        const itemResult = await this.db.prepare('SELECT * FROM order_items WHERE order_id = ? ORDER BY id').bind(row.id).all();
-        const items = ((itemResult.results ?? []) as Array<Record<string, unknown>>).map((item) => ({
+        const itemsRows = await this.query('SELECT * FROM order_items WHERE order_id = ? ORDER BY id', row.id);
+        const items = itemsRows.map((item) => ({
           productId: Number(item.product_id ?? item.productId ?? 0),
           quantity: Number(item.quantity ?? 0),
           price: Number(item.price ?? 0),
@@ -827,8 +853,8 @@ class D1DatabaseAdapter implements DatabaseAdapter {
     return { id: `REV-${Date.now()}`, createdAt: new Date().toISOString(), ...input };
   }
   async listFaqs(): Promise<DbFaqItem[]> {
-    const result = await this.db.prepare('SELECT * FROM faq_items ORDER BY created_at DESC').bind().all();
-    return ((result.results ?? []) as Array<Record<string, unknown>>).map((row) => ({
+    const rows = await this.query('SELECT * FROM faq_items ORDER BY created_at DESC');
+    return rows.map((row) => ({
       id: String(row.id ?? `FAQ-${Date.now()}`),
       question: String(row.question ?? ''),
       answer: String(row.answer ?? ''),
@@ -850,8 +876,8 @@ class D1DatabaseAdapter implements DatabaseAdapter {
     return faqItem;
   }
   async listMenuKnowledge(): Promise<DbMenuKnowledgeItem[]> {
-    const result = await this.db.prepare('SELECT * FROM menu_knowledge WHERE active = 1 ORDER BY created_at DESC').bind().all();
-    return ((result.results ?? []) as Array<Record<string, unknown>>).map((row) => ({
+    const rows = await this.query('SELECT * FROM menu_knowledge WHERE active = 1 ORDER BY created_at DESC');
+    return rows.map((row) => ({
       id: String(row.id ?? `MENU-${Date.now()}`),
       name: String(row.name ?? ''),
       description: String(row.description ?? ''),
@@ -883,13 +909,20 @@ class D1DatabaseAdapter implements DatabaseAdapter {
   }
 }
 
-export async function getDatabase(): Promise<DatabaseAdapter> {
-  const dbBinding = (globalThis as { DB?: unknown }).DB ?? process.env.D1_DATABASE;
+export async function getDatabase(dbOrEnv?: unknown): Promise<DatabaseAdapter> {
+  let dbBinding = dbOrEnv;
+  if (dbBinding && typeof dbBinding === 'object' && 'DB' in dbBinding) {
+    dbBinding = (dbBinding as { DB: unknown }).DB;
+  }
+  if (!dbBinding || typeof (dbBinding as { prepare?: unknown }).prepare !== 'function') {
+    dbBinding = (globalThis as { DB?: unknown }).DB ?? process.env.D1_DATABASE;
+  }
 
   if (dbBinding && typeof (dbBinding as { prepare?: unknown }).prepare === 'function') {
     return new D1DatabaseAdapter(dbBinding as {
       prepare: (sql: string) => {
         bind: (...args: unknown[]) => { all: () => Promise<{ results?: Record<string, unknown>[] }> };
+        all: () => Promise<{ results?: Record<string, unknown>[] }>;
       };
     });
   }

@@ -375,8 +375,49 @@ export function buildScenarioPrompt(intent: ChatIntent, question: string): strin
   return `Bạn là trợ lý quán cà phê CafeZone. Hãy trả lời câu hỏi khách hàng sau bằng tiếng Việt, rõ ràng, thân thiện và ngắn gọn. Câu hỏi: ${normalizedQuestion}`;
 }
 
-export function buildAnswerFromKnowledge(question: string, knowledge: string) {
-  const q = question.toLowerCase();
+export type KnowledgeContext = {
+  faqItems?: Array<{ question: string; answer: string; category?: string }>;
+  menuItems?: Array<{ name: string; description?: string; price: number; category?: string }>;
+  products?: Array<{ name: string; description?: string; price: number; category?: string }>;
+};
+
+export function buildAnswerFromKnowledge(
+  question: string,
+  knowledge: string,
+  context?: KnowledgeContext
+): string {
+  const q = question.toLowerCase().trim();
+
+  // 1. Direct match with D1 FAQ items
+  if (context?.faqItems && context.faqItems.length > 0) {
+    for (const faq of context.faqItems) {
+      const faqQ = faq.question.toLowerCase();
+      if (
+        faqQ.includes(q) ||
+        q.includes(faqQ) ||
+        (q.includes('giờ') && faqQ.includes('giờ')) ||
+        (q.includes('đặt bàn') && faqQ.includes('đặt bàn')) ||
+        (q.includes('món nào') && faqQ.includes('món nào')) ||
+        (q.includes('người mới') && faqQ.includes('người mới'))
+      ) {
+        return faq.answer;
+      }
+    }
+  }
+
+  // 2. Direct match with D1 Menu / Product items
+  const items = [...(context?.menuItems ?? []), ...(context?.products ?? [])];
+  if (items.length > 0) {
+    for (const item of items) {
+      const name = item.name.toLowerCase();
+      if (q.includes(name)) {
+        const priceStr = item.price ? `${item.price.toLocaleString('vi-VN')}đ` : '';
+        const desc = item.description ? ` - ${item.description}` : '';
+        return `${item.name}${desc}. Giá: ${priceStr}.`;
+      }
+    }
+  }
+
   const lines = knowledge
     .split(/\s{2,}|\n+/)
     .map((item) => item.trim())
